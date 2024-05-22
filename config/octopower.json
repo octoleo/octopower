@@ -12,6 +12,7 @@
     "keywords": ["VDM", "JCB", "SuperPower"],
     "license": "GNU General Public License version 2 or later",
     "php": "^8.1.0",
+    "joomla_framework": "^3.0",
     "version": "1.0.0",
     "author": "Llewellyn van der Merwe",
     "author_email": "joomla@vdm.io",

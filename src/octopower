@@ -108,6 +108,7 @@ function getPackageDetails() {
   getConfigValue 'VDM_PACKAGE_HOMEPAGE' '.package.homepage' false || VDM_PACKAGE_HOMEPAGE="${VDM_PACKAGER_URL}"
   getConfigValue 'VDM_PACKAGE_KEYWORDS' '.package.keywords' false || unset VDM_PACKAGE_KEYWORDS
   getConfigValue 'VDM_PACKAGE_PHP' '.package.php' || has_error=true
+  getConfigValue 'VDM_PACKAGE_JOOMLA_FRAMEWORK' '.package.joomla_framework' false || unset VDM_PACKAGE_JOOMLA_FRAMEWORK
   getConfigValue 'VDM_PACKAGE_VERSION' '.package.version' || has_error=true
   getConfigValue 'VDM_LICENSE' '.package.license' || has_error=true
   getConfigValue 'VDM_LICENSE_FILE' '.package.license_file' false || unset VDM_LICENSE_FILE
@@ -709,8 +710,15 @@ function extractJoomlaUseStatements() {
       namespace=$(echo "$line" | sed -E 's/use ([^ ]+)( as [^;]*)?;/\1/')
       # Trim leading and trailing spaces
       namespace=$(echo "$namespace" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-      # Add the namespace to the associative array
-      JOOMLA_NAMESPACES["$namespace"]=1
+      if [[ ! $namespace =~ Joomla\\CMS\\ ]]; then
+        local extracted_namespace
+        # shellcheck disable=SC1003
+        extracted_namespace=$(echo "$namespace" | awk -F'\\' '{print $1 "\\" $2}')
+        JOOMLA_FRAMEWORK["$extracted_namespace"]=1
+      else
+        # Add the namespace to the associative array
+        JOOMLA_NAMESPACES["$namespace"]=1
+      fi
     fi
   done <<< "$header_string"
 }
@@ -794,6 +802,8 @@ function clearMainEnv() {
   unset VDM_PACKAGE_HOMEPAGE
   unset VDM_PACKAGE_KEYWORDS
   unset VDM_PACKAGE_PHP
+  unset VDM_PACKAGE_JOOMLA_FRAMEWORK
+  unset VDM_PACKAGE_VERSION
   unset VDM_LICENSE
   unset VDM_LICENSE_FILE
   unset VDM_LICENSE_FILE_PATH
@@ -1036,6 +1046,11 @@ function setPackageComposerFile() {
   if [ -n "$VDM_PACKAGE_KEYWORDS" ]; then
       composer_json=$(echo "$composer_json" | jq --argjson keywords "$VDM_PACKAGE_KEYWORDS" '. + {keywords: $keywords}')
   fi
+  # add the Joomla framework classes
+  if [ -n "${VDM_PACKAGE_JOOMLA_FRAMEWORK}" ] && [ ${#JOOMLA_FRAMEWORK[@]} -ge 1 ]; then
+    classes_required=$(getJoomlaFrameworkRequired)
+    composer_json=$(echo "$composer_json" | jq --argjson classes_required "$classes_required" '.require += $classes_required')
+  fi
   # Build the author object conditionally
   AUTHOR_OBJECT=$(jq -n \
       --arg name "$VDM_AUTHOR" \
@@ -1056,14 +1071,49 @@ function setPackageComposerFile() {
   echo "$composer_json" | jq . > "$VDM_PACKAGE_COMPOSER_FILE"
 }
 
-# Function to convert JOOMLA_NAMESPACES to a Markdown list
+# Convert JOOMLA_FRAMEWORK to a require list
+function getJoomlaFrameworkRequired() {
+  # Initialize the JSON string
+  json="{"
+  first=true
+  for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
+    if [ "$first" = true ]; then
+      first=false
+    else
+      json+=","
+    fi
+    json+="\"${key//\\//}\": \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\""
+  done
+  json+="}"
+  echo -n "$json"
+}
+
+# Convert JOOMLA_NAMESPACES to a Markdown list
 function getJoomlaDependencies() {
   if [ ${#JOOMLA_NAMESPACES[@]} -eq 0 ]; then
-    echo ""
+    echo -n ""
   else
-    local markdown_list="\n## Joomla Dependencies\n\n"
+    local markdown_list="\n## Joomla CMS Dependencies\n\n"
     markdown_list+=$(for key in "${!JOOMLA_NAMESPACES[@]}"; do
       echo "- ${key}"
+    done | sort)
+    echo -e "$markdown_list\n"
+  fi
+}
+
+# Convert JOOMLA_FRAMEWORK to a Markdown list
+function getJoomlaFramework() {
+  if [ ${#JOOMLA_FRAMEWORK[@]} -eq 0 ]; then
+    echo -n ""
+  else
+    local markdown_list="\n## Joomla Framework Dependencies\n\n"
+    if [ -z "${VDM_PACKAGE_JOOMLA_FRAMEWORK}" ]; then
+      markdown_list+=">You can add the following to your project to insure the Joomla! framework classes are in your project.\n\n"
+    else
+      markdown_list+=">We have added the following framework classes the required list of this composer package.\n\n"
+    fi
+    markdown_list+=$(for key in "${!JOOMLA_FRAMEWORK[@]}"; do
+      echo "- \`composer require ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\`"
     done | sort)
     echo -e "$markdown_list\n"
   fi
@@ -1104,6 +1154,8 @@ function setReadMe() {
     echo "- Author: [${VDM_AUTHOR:-$PROGRAM_NAME}](${VDM_AUTHOR_URL:-$PROGRAM_URL})"
     echo "- Creation Date: ${CREATION_DATE}"
     getJoomlaDependencies
+    getJoomlaFramework
+    echo ""
     echo "### License"
     echo "> ${VDM_LICENSE:-none}"
     echo ""
@@ -1687,6 +1739,7 @@ else
 fi
 # Global array to store Joomla namespaces
 declare -A JOOMLA_NAMESPACES
+declare -A JOOMLA_FRAMEWORK
 
 # if path not set try $PWD path (so you can open a folder that has .octopc file and it will be loaded)
 tmp_path="$PWD/.${PROGRAM_CODE}"

@@ -1,0 +1,6 @@
+GIT_AUTHOR_NAME='USERNAME'
+GIT_AUTHOR_EMAIL='username@domain.com'
+GIT_GPG_SIGN=true
+GIT_SIGNING_KEY='xxxxxxxxxxxxxxx'
+VDM_GLOBAL_TOKEN='xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+VDM_PACKAGE_CONF_FILE='/home/username/projectname/.octopower'

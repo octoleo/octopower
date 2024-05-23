@@ -288,6 +288,7 @@ function loadChildrenPowers() {
   addValueToPower "${guid}" 'children' "done"
   # get the global config values if not set
   setValueFromJson 'VDM_POWER_DATA' '.data' "${power}" || has_error=true
+  setValueFromJson 'VDM_POWER_USE_NAME' '.use_name' "${power}" || has_error=true
   # could we get the data
   if $has_error; then
     _echo "[error] We could not get power data for ${guid} so the dependencies could not be loaded."
@@ -304,7 +305,7 @@ function loadChildrenPowers() {
   setValueFromJson 'VDM_POWER_LOAD_SELECTION' '.load_selection' "${power_data}"
   setValueFromJson 'VDM_POWER_HEAD' '.head' "${power_data}"
   # extract any joomla dependencies we might find
-  extractJoomlaUseStatements "${VDM_POWER_HEAD:-none}"
+  extractJoomlaUseStatements "${VDM_POWER_HEAD:-none}" "${VDM_POWER_USE_NAME}"
   # TODO add more dynamic options
   # setValueFromJson 'VDM_POWER_COMPOSER' '.composer' "${power_data}"
   # check if we have VDM_POWER_EXTENDS
@@ -479,6 +480,7 @@ function setPowerData() {
   local settings
   local namespace
   local name
+  local use_name
   # get existing power
   power=$(getExistingPower "${guid}")
   if [ -z "$power" ]; then
@@ -524,6 +526,7 @@ function setPowerData() {
   settings="${VDM_POWER_SETTINGS_URL}"
   namespace="${VDM_POWER_NAMESPACE}"
   name="${VDM_POWER_NAME}"
+  use_name="${VDM_POWER_NAMESPACE}\\${VDM_POWER_NAME}"
   # little information of progress
   _echo "[info] Getting (${namespace}\\${name}) power (${guid}) details."
   # we first load the settings data
@@ -537,6 +540,7 @@ function setPowerData() {
   # check that we got data
   if [ -n "${VDM_API_BUCKET}" ]; then
     addJsonValueToPower "${guid}" 'data' "${VDM_API_BUCKET}"
+    addValueToPower "${guid}" 'use_name' "${use_name}"
   else
     # always clear memory
     clearPowerDataEnv
@@ -698,6 +702,7 @@ function addNamespace() {
 # extract Joomla use statements
 function extractJoomlaUseStatements() {
   local header_string="$1"
+  local use_name="$2"
   # Check if the header string is empty
   if [[ -z "$header_string" ]]; then
     return
@@ -715,12 +720,26 @@ function extractJoomlaUseStatements() {
         # shellcheck disable=SC1003
         extracted_namespace=$(echo "$namespace" | awk -F'\\' '{print $1 "\\" $2}')
         JOOMLA_FRAMEWORK["$extracted_namespace"]=1
+        setLinkedDependencyClasses "${extracted_namespace}" "${use_name//\\//}" "${use_name}"
       else
         # Add the namespace to the associative array
         JOOMLA_NAMESPACES["$namespace"]=1
+        setLinkedDependencyClasses "${namespace}" "${use_name//\\//}" "${use_name}"
       fi
     fi
   done <<< "$header_string"
+}
+
+# set the linked classes to the dependencies
+function setLinkedDependencyClasses() {
+  local main_key="$1"
+  local sub_key="$2"
+  local value="$3"
+
+  # Use jq to update the JSON structure
+  VDM_LINKED_CLASSES=$(echo "$VDM_LINKED_CLASSES" | jq --arg mk "$main_key" --arg sk "$sub_key" --arg val "$value" '
+    .[$mk][$sk] = $val
+  ')
 }
 
 # just to clear all file ENVs
@@ -760,6 +779,7 @@ function clearPowerChildrenEnv() {
   unset VDM_POWER_LOAD_SELECTION
   unset VDM_POWER_USE_SELECTION
   unset VDM_POWER_HEAD
+  unset VDM_POWER_USE_NAME
   unset VDM_POWER_COMPOSER
 }
 
@@ -1088,19 +1108,6 @@ function getJoomlaFrameworkRequired() {
   echo -n "$json"
 }
 
-# Convert JOOMLA_NAMESPACES to a Markdown list
-function getJoomlaDependencies() {
-  if [ ${#JOOMLA_NAMESPACES[@]} -eq 0 ]; then
-    echo -n ""
-  else
-    local markdown_list="\n## Joomla CMS Dependencies\n\n"
-    markdown_list+=$(for key in "${!JOOMLA_NAMESPACES[@]}"; do
-      echo "- ${key}"
-    done | sort)
-    echo -e "$markdown_list\n"
-  fi
-}
-
 # Convert JOOMLA_FRAMEWORK to a Markdown list
 function getJoomlaFramework() {
   if [ ${#JOOMLA_FRAMEWORK[@]} -eq 0 ]; then
@@ -1108,15 +1115,47 @@ function getJoomlaFramework() {
   else
     local markdown_list="\n## Joomla Framework Dependencies\n\n"
     if [ -z "${VDM_PACKAGE_JOOMLA_FRAMEWORK}" ]; then
-      markdown_list+=">You can add the following to your project to insure the Joomla! framework classes are in your project.\n\n"
+      markdown_list+=">You should add the following to your project to ensure the Joomla! framework classes are included.\n\n"
+      for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
+        markdown_list+="- \`composer require ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\`\n";
+        markdown_list+=$(getLinkedClassesMarkdown "${key}");
+        markdown_list+="\n";
+      done
     else
-      markdown_list+=">We have added the following framework classes the required list of this composer package.\n\n"
+      markdown_list+=">We have added the following framework classes to the required list of this Composer package.\n\n"
+      for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
+        markdown_list+="- ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\n";
+        markdown_list+=$(getLinkedClassesMarkdown "${key}");
+        markdown_list+="\n";
+      done
     fi
-    markdown_list+=$(for key in "${!JOOMLA_FRAMEWORK[@]}"; do
-      echo "- \`composer require ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\`"
-    done | sort)
-    echo -e "$markdown_list\n"
+    echo -e "$markdown_list"
   fi
+}
+
+# Convert JOOMLA_NAMESPACES to a Markdown list
+function getJoomlaDependencies() {
+  if [ ${#JOOMLA_NAMESPACES[@]} -eq 0 ]; then
+    echo -n ""
+  else
+    local markdown_list="\n## Joomla CMS Dependencies\n\n"
+    for key in $(printf "%s\n" "${!JOOMLA_NAMESPACES[@]}" | sort); do
+      markdown_list+="- ${key}\n";
+      markdown_list+=$(getLinkedClassesMarkdown "${key}");
+      markdown_list+="\n";
+    done
+    echo -e "$markdown_list"
+  fi
+}
+
+# get the classes linked to this dependency
+function getLinkedClassesMarkdown() {
+  local dependency="$1"
+  local subset
+  # Extract the subset for the given main_key
+  subset=$(echo "$VDM_LINKED_CLASSES" | jq --arg mk "$dependency" '.[$mk] // {}')
+  # Generate the markdown format
+  echo "$subset" | jq -r 'to_entries[] | "  - [\(.value)](src/\(.key).php)"'
 }
 
 # convert VDM_NAME to the desired header format
@@ -1153,8 +1192,26 @@ function setReadMe() {
     echo "- Packager: [${VDM_PACKAGER}](${VDM_PACKAGER_URL})"
     echo "- Author: [${VDM_AUTHOR:-$PROGRAM_NAME}](${VDM_AUTHOR_URL:-$PROGRAM_URL})"
     echo "- Creation Date: ${CREATION_DATE}"
-    getJoomlaDependencies
+    echo ""
+    echo "### Installation via Composer"
+    echo ""
+    echo "Setup this registry in your \`~/.composer/config.json\` file:"
+    echo "\`\`\`"
+    echo "{"
+    echo "	\"repositories\": [{"
+    echo "			\"type\": \"composer\","
+    echo "			\"url\": \"https://${VDM_REPOSITORY_URL}/api/packages/${VDM_REPOSITORY_OWNER}/composer\""
+    echo "		}"
+    echo "	]"
+    echo "}"
+    echo "\`\`\`"
+    echo ""
+    echo "To install the package using Composer, run the following command:"
+    echo "\`\`\`"
+    echo "composer require ${VDM_NAME:-error}:${VDM_PACKAGE_VERSION:-1.0.0}"
+    echo "\`\`\`"
     getJoomlaFramework
+    getJoomlaDependencies
     echo ""
     echo "### License"
     echo "> ${VDM_LICENSE:-none}"
@@ -1217,8 +1274,6 @@ function setRepository() {
   if $update_repo && [[ -z $(git status --porcelain) ]]; then
     _echo "[info] No changes found in (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
   else
-    # add user details
-    setUserDetails
     # check if we must update or create repository
     if $update_repo; then
       # make API call
@@ -1231,6 +1286,8 @@ function setRepository() {
       else
         message="Update"
       fi
+      # add user details
+      setUserDetails
       # get the repository last tag
       makeGitCommit "${message}" "${VDM_PACKAGE_VERSION:-1.0.0}" "$VDM_TAG_EXIST" || return 28
       # give little notice of progress
@@ -1289,6 +1346,8 @@ function setGitRepository() {
   _echo "[info] Initializing the (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
   # initialize the repository
   git init >/dev/null 2>&1 || return 29
+  # add user details
+  setUserDetails
   # add the first commit
   makeGitCommit "First Commit - ${VDM_PACKAGE_VERSION:-1.0.0}" "${VDM_PACKAGE_VERSION:-1.0.0}" >/dev/null 2>&1 || return 28
   # little information of progress
@@ -1740,6 +1799,7 @@ fi
 # Global array to store Joomla namespaces
 declare -A JOOMLA_NAMESPACES
 declare -A JOOMLA_FRAMEWORK
+VDM_LINKED_CLASSES=$(jq -n '{}')
 
 # if path not set try $PWD path (so you can open a folder that has .octopc file and it will be loaded)
 tmp_path="$PWD/.${PROGRAM_CODE}"

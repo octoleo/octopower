@@ -228,7 +228,9 @@ function setPowers() {
 # load the power
 function loadPower() {
   local guid="$1"
-  if [ ${#guid} -ge 30 ] && validateGuid "${guid}"; then
+  if [[ $guid == "//"* ]]; then
+    return 0 # skip comments ;)
+  elif [ ${#guid} -ge 30 ] && validateGuid "${guid}"; then
     setPower "$guid" || return 19
     loadChildrenPowers "$guid" || return 19
     return 0

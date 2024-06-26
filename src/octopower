@@ -534,6 +534,8 @@ function setPowerData() {
     clearPowerDataEnv
     return 11
   fi
+  # replace any strings in namespace as needed
+  [ -n "${VDM_REPOSITORY_REPLACEMENT}" ] && VDM_POWER_NAMESPACE=$(strReplace "${VDM_POWER_NAMESPACE}")
   # we must add these locally to avoid collusion
   owner="${VDM_POWER_OWNER}"
   repo="${VDM_POWER_REPO}"
@@ -574,8 +576,6 @@ function setPowerData() {
   fi
   # check that we got data
   if [ -n "${VDM_API_FILE_PATH}" ] && [ -f "${VDM_API_FILE_PATH}" ]; then
-    # replace any strings in namespace as needed
-    [ -n "${VDM_REPOSITORY_REPLACEMENT}" ] && namespace=$(strReplace "${namespace}")
     # add the name space
     addNamespace "${namespace}"
     # set class folder path
@@ -584,7 +584,7 @@ function setPowerData() {
     mkdir -p "${class_path}"
     # move the class into place
     mv -f "${VDM_API_FILE_PATH}" "${class_path}/${name}.php"
-    # replace any strings in namespace as needed
+    # replace any strings in code as needed
     [ -n "${VDM_REPOSITORY_REPLACEMENT}" ] && fileReplaceStrings "${class_path}/${name}.php"
   else
     # always clear memory

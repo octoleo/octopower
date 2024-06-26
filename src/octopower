@@ -24,6 +24,10 @@ command -v zip >/dev/null 2>&1 || {
   echo >&2 "[error] We require zip for $PROGRAM_NAME v${PROGRAM_VERSION} to work, but it's not installed.  Aborting."
   exit 1
 }
+command -v sed >/dev/null 2>&1 || {
+  echo >&2 "[error] We require sed for $PROGRAM_NAME v${PROGRAM_VERSION} to work, but it's not installed.  Aborting."
+  exit 1
+}
 
 # main function ˘Ô≈ôﺣ
 function main() {
@@ -147,6 +151,7 @@ function getRepositoryDetails() {
     getConfigValue 'VDM_REPOSITORY_TOKEN_NAME' '.repository.token_name' false || VDM_REPOSITORY_TOKEN_NAME="VDM_GLOBAL_TOKEN"
     getConfigValue 'VDM_REPOSITORY_URL_NAME' '.repository.url_name' false || VDM_REPOSITORY_URL_NAME="VDM_GLOBAL_URL"
     getConfigValue 'VDM_REPOSITORY_API_NAME' '.repository.api_name' false || VDM_REPOSITORY_API_NAME="VDM_GLOBAL_API"
+    getConfigValue 'VDM_REPOSITORY_REPLACEMENT' '.repository.replace' false || unset VDM_REPOSITORY_REPLACEMENT
     # set the package (api/url/toke)
     tmp_token=${!VDM_REPOSITORY_TOKEN_NAME}
     tmp_url=${!VDM_REPOSITORY_URL_NAME}
@@ -569,6 +574,8 @@ function setPowerData() {
   fi
   # check that we got data
   if [ -n "${VDM_API_FILE_PATH}" ] && [ -f "${VDM_API_FILE_PATH}" ]; then
+    # replace any strings in namespace as needed
+    [ -n "${VDM_REPOSITORY_REPLACEMENT}" ] && namespace=$(strReplace "${namespace}")
     # add the name space
     addNamespace "${namespace}"
     # set class folder path
@@ -577,6 +584,8 @@ function setPowerData() {
     mkdir -p "${class_path}"
     # move the class into place
     mv -f "${VDM_API_FILE_PATH}" "${class_path}/${name}.php"
+    # replace any strings in namespace as needed
+    [ -n "${VDM_REPOSITORY_REPLACEMENT}" ] && fileReplaceStrings "${class_path}/${name}.php"
   else
     # always clear memory
     clearPowerDataEnv
@@ -1514,6 +1523,56 @@ function _zip() {
       return 0
     fi
     return 1
+}
+
+# Perform string replacements (VDM_REPOSITORY_REPLACEMENT)
+function strReplace() {
+    local content="$1"
+    local result="$content"
+    local pairs
+    local pair_decoded
+    local key
+    local value
+
+    # Extract keys and values and perform replacements
+    pairs=$(echo "$VDM_REPOSITORY_REPLACEMENT" | jq -r 'to_entries | .[] | @base64')
+
+    # Loop over the pairs without creating a subshell
+    while IFS= read -r pair; do
+        # Decode from base64
+        pair_decoded=$(echo "$pair" | base64 --decode)
+        key=$(echo "$pair_decoded" | jq -r .key)
+        value=$(echo "$pair_decoded" | jq -r .value)
+
+        # Perform replacements in the string
+        # shellcheck disable=SC2001
+        result=$(echo "$result" | sed "s|${key//\\/\\\\}|${value//\\/\\\\}|g")
+    done <<< "$pairs"  # Redirect the variable into the loop to avoid subshells
+
+    echo "$result"
+}
+
+# Replace strings in a file directly (VDM_REPOSITORY_REPLACEMENT)
+function fileReplaceStrings() {
+    local file_path="$1"
+
+    # Check if the file exists
+    if [[ ! -f "$file_path" ]]; then
+        echo "File does not exist: $file_path"
+        return 1
+    fi
+
+    # Extract keys and values and perform replacements
+    echo "$VDM_REPOSITORY_REPLACEMENT" | jq -r 'to_entries | .[] | @base64' |
+    while IFS= read -r pair; do
+        # Decode from base64
+        pair_decoded=$(echo "$pair" | base64 --decode)
+        key=$(echo "$pair_decoded" | jq -r .key)
+        value=$(echo "$pair_decoded" | jq -r .value)
+
+        # Perform replacements in the file using unescaped values
+        sed -i "s|${key//\\/\\\\}|${value//\\/\\\\}|g" "$file_path"
+    done
 }
 
 # uninstalls the octopc program.

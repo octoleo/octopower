@@ -3,8 +3,8 @@
 # Program name
 PROGRAM_NAME="OctoPower"
 PROGRAM_CODE="octopower"
-PROGRAM_VERSION="1.0.1"
-PROGRAM_V="1.0"
+PROGRAM_VERSION="2.0.0"
+PROGRAM_V="2.0"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
 # Do some prep work
@@ -29,1884 +29,1952 @@ command -v sed >/dev/null 2>&1 || {
   exit 1
 }
 
-# main function ˘Ô≈ôﺣ
-function main() {
-  # check if we have project overrides for the environment variables
-  # shellcheck disable=SC2015
-  [ -f "$VDM_PACKAGE_CONF_FILE" ] && getProjectEnvironment || {
-    echo >&2 "[error] We require config file with correct packaging details for $PROGRAM_NAME v${PROGRAM_VERSION} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
+# Subshell to isolate variables
+(
+  # main function ˘Ô≈ôﺣ
+  function main() {
+    # check if we have project overrides for the environment variables
+    # shellcheck disable=SC2015
+    [ -f "$VDM_PACKAGE_CONF_FILE" ] && getProjectEnvironment || {
+      echo >&2 "[error] We require config file with correct packaging details for $PROGRAM_NAME v${PROGRAM_VERSION} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
+      clearMainEnv
+      exit 1
+    }
+    # get the package details
+    getPackageDetails || {
+      echo >&2 "[error] We require config file with correct packaging details for $PROGRAM_NAME v${PROGRAM_VERSION} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
+      clearMainEnv
+      exit 1
+    }
+    # get destination details
+    getRepositoryDetails || {
+      echo >&2 "[error] We require config file with correct repository details for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
+      clearMainEnv
+      exit 1
+    }
+    # build the project package path
+    setPackageDir || {
+      echo >&2 "[error] We could not set the package directories for ${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.  Aborting."
+      clearMainEnv
+      exit 1
+    }
+    # set the powers
+    setPowers || {
+      echo >&2 "[error] We could not find powers for ${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO} package.  Aborting."
+      clearMainEnv
+      exit 1
+    }
+    # set the package composer file
+    setPackageComposerFile
+    # set the readme
+    setReadMe
+    # get package repository
+    setRepository || {
+      echo >&2 "[error] We could not set the GIT repository for ${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.  Aborting."
+      clearMainEnv
+      exit 1
+    }
+    # push the composer package out
+    setComposerPackage || {
+      echo >&2 "[error] We could not set the composer package for ${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.  Aborting."
+      clearMainEnv
+      exit 1
+    }
+    # remove all files
+    clearFiles
+    # clear main env
     clearMainEnv
-    exit 1
+    # final message
+    _echo "[Success] Package completely updated!"
   }
-  # get the package details
-  getPackageDetails || {
-    echo >&2 "[error] We require config file with correct packaging details for $PROGRAM_NAME v${PROGRAM_VERSION} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
-    clearMainEnv
-    exit 1
-  }
-  # get destination details
-  getRepositoryDetails || {
-    echo >&2 "[error] We require config file with correct repository details for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
-    clearMainEnv
-    exit 1
-  }
-  # build the project package path
-  setPackageDir || {
-    echo >&2 "[error] We could not set the package directories for ${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.  Aborting."
-    clearMainEnv
-    exit 1
-  }
-  # set the powers
-  setPowers || {
-    echo >&2 "[error] We could not find powers for ${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO} package.  Aborting."
-    clearMainEnv
-    exit 1
-  }
-  # set the package composer file
-  setPackageComposerFile
-  # set the readme
-  setReadMe
-  # get package repository
-  setRepository || {
-    echo >&2 "[error] We could not set the GIT repository for ${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.  Aborting."
-    clearMainEnv
-    exit 1
-  }
-  # push the composer package out
-  setComposerPackage || {
-    echo >&2 "[error] We could not set the composer package for ${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.  Aborting."
-    clearMainEnv
-    exit 1
-  }
-  # remove all files
-  clearFiles
-  # clear main env
-  clearMainEnv
-  # final message
-  _echo "[Success] Package completely updated!"
-}
 
-# set the package details
-function getPackageDetails() {
-  # little information of progress
-  _echo "[info] Loading the Package Details..."
-  # make configuration globally available
-  export VDM_CONFIG_DATA
-  # check for errors
-  local has_error=false
-
-  # get the global config values if not set
-  getConfigValue 'VDM_PACKAGER' '.global.packager' false || VDM_PACKAGER="${PROGRAM_NAME} v${PROGRAM_V}"
-  getConfigValue 'VDM_PACKAGER_URL' '.global.packager_url' false || VDM_PACKAGER_URL="${PROGRAM_URL}"
-  getConfigValue 'VDM_GLOBAL_URL' '.global.url' || has_error=true
-  getConfigValue 'VDM_GLOBAL_TOKEN' '.global.token' || has_error=true
-  getConfigValue 'VDM_GLOBAL_API' '.global.api' || has_error=true
-  # check if we have some errors already
-  $has_error && return 13
-
-  # package related details
-  getConfigValue 'VDM_NAME' '.package.name' || has_error=true
-  getConfigValue 'VDM_CODE_NAME' '.package.code_name' || has_error=true
-  getConfigValue 'VDM_PACKAGE_TYPE' '.package.type' false || VDM_PACKAGE_TYPE="library"
-  getConfigValue 'VDM_PACKAGE_DESCRIPTION' '.package.description' || has_error=true
-  getConfigValue 'VDM_PACKAGE_HOMEPAGE' '.package.homepage' false || VDM_PACKAGE_HOMEPAGE="${VDM_PACKAGER_URL}"
-  getConfigValue 'VDM_PACKAGE_KEYWORDS' '.package.keywords' false || unset VDM_PACKAGE_KEYWORDS
-  getConfigValue 'VDM_PACKAGE_PHP' '.package.php' || has_error=true
-  getConfigValue 'VDM_PACKAGE_JOOMLA_FRAMEWORK' '.package.joomla_framework' false || unset VDM_PACKAGE_JOOMLA_FRAMEWORK
-  getConfigValue 'VDM_PACKAGE_VERSION' '.package.version' || has_error=true
-  getConfigValue 'VDM_LICENSE' '.package.license' || has_error=true
-  getConfigValue 'VDM_LICENSE_FILE' '.package.license_file' false || unset VDM_LICENSE_FILE
-  getConfigValue 'VDM_LICENSE_FILE_PATH' '.package.license_file_path' false || unset VDM_LICENSE_FILE_PATH
-  getConfigValue 'VDM_AUTHOR' '.package.author' false || unset VDM_AUTHOR
-  getConfigValue 'VDM_AUTHOR_EMAIL' '.package.author_email' false || unset VDM_AUTHOR_EMAIL
-  getConfigValue 'VDM_AUTHOR_URL' '.package.author_url' false || unset VDM_AUTHOR_URL
-  getConfigValue 'VDM_AUTHOR_ROLE' '.package.author_role' false || unset VDM_AUTHOR_ROLE
-  # check if we have some errors already
-  $has_error && return 13
-
-  # make globally available
-  export VDM_PACKAGE_TYPE
-  export VDM_PACKAGE_HOMEPAGE
-  export VDM_PACKAGE_PHP
-
-  # success
-  return 0
-}
-
-# set the target repository details
-function getRepositoryDetails() {
-  # make sure we have package details
-  if [[ "${VDM_CONFIG_DATA}" =~ '"repository"' ]]; then
+  # set the package details
+  function getPackageDetails() {
     # little information of progress
-    _echo "[info] Loading the Repository Details..."
+    _echo "[info] Loading the Package Details..."
+    # make configuration globally available
+    export VDM_CONFIG_DATA
     # check for errors
     local has_error=false
-    local tmp_token
-    local tmp_url
-    local tmp_api
+
     # get the global config values if not set
-    getConfigValue 'VDM_REPOSITORY_OWNER' '.repository.owner' || has_error=true
-    getConfigValue 'VDM_REPOSITORY_REPO' '.repository.repo' || has_error=true
-    getConfigValue 'VDM_REPOSITORY_BRANCH' '.repository.branch' false || VDM_REPOSITORY_BRANCH="default"
-    getConfigValue 'VDM_REPOSITORY_TOKEN_NAME' '.repository.token_name' false || VDM_REPOSITORY_TOKEN_NAME="VDM_GLOBAL_TOKEN"
-    getConfigValue 'VDM_REPOSITORY_URL_NAME' '.repository.url_name' false || VDM_REPOSITORY_URL_NAME="VDM_GLOBAL_URL"
-    getConfigValue 'VDM_REPOSITORY_API_NAME' '.repository.api_name' false || VDM_REPOSITORY_API_NAME="VDM_GLOBAL_API"
-    getConfigValue 'VDM_REPOSITORY_REPLACEMENT' '.repository.replace' false || unset VDM_REPOSITORY_REPLACEMENT
-    # set the package (api/url/toke)
-    tmp_token=${!VDM_REPOSITORY_TOKEN_NAME}
-    tmp_url=${!VDM_REPOSITORY_URL_NAME}
-    tmp_api=${!VDM_REPOSITORY_API_NAME}
-    # allow direct overriding (api/url/toke)
-    getConfigValue 'VDM_REPOSITORY_TOKEN' '.repository.token' false || VDM_REPOSITORY_TOKEN="${tmp_token}"
-    getConfigValue 'VDM_REPOSITORY_URL' '.repository.url' false || VDM_REPOSITORY_URL="${tmp_url}"
-    getConfigValue 'VDM_REPOSITORY_API' '.repository.api' false || VDM_REPOSITORY_API="${tmp_api}"
+    getConfigValue 'VDM_PACKAGER' '.global.packager' false || VDM_PACKAGER="${PROGRAM_NAME} v${PROGRAM_V}"
+    getConfigValue 'VDM_PACKAGER_URL' '.global.packager_url' false || VDM_PACKAGER_URL="${PROGRAM_URL}"
+    getConfigValue 'VDM_GLOBAL_URL' '.global.url' || has_error=true
+    getConfigValue 'VDM_GLOBAL_TOKEN' '.global.token' || has_error=true
+    getConfigValue 'VDM_GLOBAL_API' '.global.api' || has_error=true
     # check if we have some errors already
-    $has_error && return 17
+    $has_error && return 13
+
+    # package related details
+    getConfigValue 'VDM_NAME' '.package.name' || has_error=true
+    getConfigValue 'VDM_CODE_NAME' '.package.code_name' || has_error=true
+    getConfigValue 'VDM_PACKAGE_TYPE' '.package.type' false || VDM_PACKAGE_TYPE="library"
+    getConfigValue 'VDM_PACKAGE_DESCRIPTION' '.package.description' || has_error=true
+    getConfigValue 'VDM_PACKAGE_HOMEPAGE' '.package.homepage' false || VDM_PACKAGE_HOMEPAGE="${VDM_PACKAGER_URL}"
+    getConfigValue 'VDM_PACKAGE_KEYWORDS' '.package.keywords' false || unset VDM_PACKAGE_KEYWORDS
+    getConfigValue 'VDM_PACKAGE_PHP' '.package.php' || has_error=true
+    getConfigValue 'VDM_PACKAGE_JOOMLA_FRAMEWORK' '.package.joomla_framework' false || unset VDM_PACKAGE_JOOMLA_FRAMEWORK
+    getConfigValue 'VDM_PACKAGE_VERSION' '.package.version' || has_error=true
+    getConfigValue 'VDM_LICENSE' '.package.license' || has_error=true
+    getConfigValue 'VDM_LICENSE_FILE' '.package.license_file' false || unset VDM_LICENSE_FILE
+    getConfigValue 'VDM_LICENSE_FILE_PATH' '.package.license_file_path' false || unset VDM_LICENSE_FILE_PATH
+    getConfigValue 'VDM_AUTHOR' '.package.author' false || unset VDM_AUTHOR
+    getConfigValue 'VDM_AUTHOR_EMAIL' '.package.author_email' false || unset VDM_AUTHOR_EMAIL
+    getConfigValue 'VDM_AUTHOR_URL' '.package.author_url' false || unset VDM_AUTHOR_URL
+    getConfigValue 'VDM_AUTHOR_ROLE' '.package.author_role' false || unset VDM_AUTHOR_ROLE
+    # check if we have some errors already
+    $has_error && return 13
+
     # make globally available
-    export VDM_REPOSITORY_BRANCH
-    export VDM_REPOSITORY_TOKEN
-    export VDM_REPOSITORY_URL
-    export VDM_REPOSITORY_API
+    export VDM_PACKAGE_TYPE
+    export VDM_PACKAGE_HOMEPAGE
+    export VDM_PACKAGE_PHP
+
     # success
     return 0
-  else
-    # failed
-    return 17
-  fi
-}
-
-# set the Package Path
-function setPackageDir() {
-  # little information of progress
-  _echo "[info] Setting the Package Directories..."
-  # the full project path
-  VDM_PACKAGE_DIR="${VDM_MAIN_DIR}/${VDM_REPOSITORY_REPO}"
-  VDM_PACKAGE_GIT_DIR="${VDM_MAIN_DIR}/git"
-  VDM_PACKAGE_SRC_DIR="${VDM_PACKAGE_DIR}/src"
-  VDM_PACKAGE_ZIP_FILE="${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}.${VDM_PACKAGE_VERSION:-1.0.0}.zip"
-  # makes the project path available
-  export VDM_PACKAGE_DIR
-  export VDM_PACKAGE_GIT_DIR
-  export VDM_PACKAGE_SRC_DIR
-  export VDM_PACKAGE_ZIP_FILE
-  # always remove previous files (if found)
-  clearFiles
-  # set the license file
-  VDM_PACKAGE_LICENSE_FILE_PATH="${VDM_PACKAGE_DIR}/LICENSE"
-  # set the package composer file
-  VDM_PACKAGE_COMPOSER_FILE="${VDM_PACKAGE_DIR}/composer.json"
-  # set the README
-  VDM_README_MD="${VDM_PACKAGE_DIR}/README.md"
-  # makes the project file locations available
-  export VDM_PACKAGE_LICENSE_FILE_PATH
-  export VDM_PACKAGE_COMPOSER_FILE
-  export VDM_README_MD
-  # make sure the packages dir is created
-  mkdir -p "${VDM_PACKAGE_DIR}" || return 12
-  #make sure the src dir is created
-  mkdir -p "${VDM_PACKAGE_SRC_DIR}" || return 12
-  #make sure the git dir is created
-  mkdir -p "${VDM_PACKAGE_GIT_DIR}" || return 12
-  # success
-  return 0
-}
-
-# set the Powers
-function setPowers() {
-  # little information of progress
-  _echo "[info] Loading the Powers..."
-  # check for powers
-  local has_powers=false
-  # load all the repositories
-  loadSuperpowerRepositories || return 13
-  # search for the powers
-  for power in $(echo "${VDM_CONFIG_DATA}" | jq -r '.powers[]'); do
-    # load the power
-    loadPower "${power}" && has_powers=true
-  done
-  # check if we found a file
-  $has_powers || return 13
-  # success
-  return 0
-}
-
-# load the power
-function loadPower() {
-  local guid="$1"
-  if [[ $guid == "//"* ]]; then
-    return 0 # skip comments ;)
-  elif [ ${#guid} -ge 30 ] && validateGuid "${guid}"; then
-    setPower "$guid" || return 19
-    loadChildrenPowers "$guid" || return 19
-    return 0
-  fi
-  return 19
-}
-
-# set the power found
-function setPower() {
-  local guid="$1"
-  # check if we have already loaded this power
-  existingPower "${guid}" && return 0
-  # try to load it
-  searchForPower "${guid}" || {
-    _echo "[error] We could not find power ${guid}."
-    return 11
-  }
-  # set the power details
-  setPowerData "${guid}" || {
-    _echo "[error] We could not set the power ${guid} data."
-    return 11
   }
 
-  return 0
-}
-
-# function to load all the children/linked powers
-function loadChildrenPowers() {
-  local guid="$1"
-  local power
-  local power_data
-  local has_error
-  local children_loaded
-  # some local vars
-  local guids
-  local extends
-  local extends_interfaces
-  local implements
-  local use_selection
-  local load_selection
-  # stage the power details for the API call
-  has_error=false
-  children_loaded=true
-  # get existing power
-  power=$(getExistingPower "${guid}")
-  if [ -z "$power" ]; then
-    _echo "[error] We could not find power ${guid} in local set."
-    return 11
-  fi
-  # check if we already have the children loaded
-  setValueFromJson 'VDM_POWER_CHILDREN' '.children' "${power}" || children_loaded=false
-  # check if we have the children already loaded
-  if $children_loaded; then
-    # always clear memory
-    clearPowerChildrenEnv
-    return 0
-  fi
-  # stop children from being loaded again
-  addValueToPower "${guid}" 'children' "done"
-  # get the global config values if not set
-  setValueFromJson 'VDM_POWER_DATA' '.data' "${power}" || has_error=true
-  setValueFromJson 'VDM_POWER_USE_NAME' '.use_name' "${power}" || has_error=true
-  # could we get the data
-  if $has_error; then
-    _echo "[error] We could not get power data for ${guid} so the dependencies could not be loaded."
-    # always clear memory
-    clearPowerChildrenEnv
-    return 11
-  fi
-  # we must add these locally to avoid collusion
-  power_data="${VDM_POWER_DATA}"
-  # get th values if set
-  setValueFromJson 'VDM_POWER_EXTENDS' '.extends' "${power_data}"
-  setValueFromJson 'VDM_POWER_EXTENDS_INTERFACES' '.extendsinterfaces' "${power_data}"
-  setValueFromJson 'VDM_POWER_IMPLEMENTS' '.implements' "${power_data}"
-  setValueFromJson 'VDM_POWER_USE_SELECTION' '.use_selection' "${power_data}"
-  setValueFromJson 'VDM_POWER_LOAD_SELECTION' '.load_selection' "${power_data}"
-  setValueFromJson 'VDM_POWER_HEAD' '.head' "${power_data}"
-  # extract any joomla dependencies we might find
-  extractJoomlaUseStatements "${VDM_POWER_HEAD:-none}" "${VDM_POWER_USE_NAME}"
-  # TODO add more dynamic options
-  # setValueFromJson 'VDM_POWER_COMPOSER' '.composer' "${power_data}"
-  # check if we have VDM_POWER_EXTENDS
-  # we must add these locally to avoid collusion
-  extends="${VDM_POWER_EXTENDS:-0}"
-  extends_interfaces="${VDM_POWER_EXTENDS_INTERFACES:-null}"
-  implements="${VDM_POWER_IMPLEMENTS:-null}"
-  use_selection="${VDM_POWER_USE_SELECTION:-null}"
-  load_selection="${VDM_POWER_LOAD_SELECTION:-null}"
-  if [ "${extends}" != "0" ]; then
-    loadPower "${extends}"
-  fi
-  # Process the JSON array in extends_interfaces if it's not empty or null
-  if [ "${extends_interfaces}" != "null" ]; then
-      guids=$(echo "${extends_interfaces}" | jq -r '.[]')
-      for guid in $guids; do
-          loadPower "$guid"
-      done
-  fi
-  # Process the JSON array in implements if it's not empty or null
-  if [ "${implements}" != "null" ]; then
-      guids=$(echo "${implements}" | jq -r '.[]')
-      for guid in $guids; do
-          loadPower "$guid"
-      done
-  fi
-  # Process the JSON object in use_selection if it's not empty or null
-  if [ "${use_selection}" != "null" ]; then
-      uses=$(echo "${use_selection}" | jq -r '.[] | .use')
-      for use in $uses; do
-          loadPower "$use"
-      done
-  fi
-  # Process the JSON object in load_selection if it's not empty or null
-  if [ "${load_selection}" != "null" ]; then
-      loads=$(echo "${load_selection}" | jq -r '.[] | .load')
-      for load in $loads; do
-          loadPower "$load"
-      done
-  fi
-  # always clear memory
-  clearPowerChildrenEnv
-
-  return 0
-}
-
-# Check if a given power already exists in VDM_POWERS
-function existingPower() {
-  local guid="$1"
-  local exists
-
-  # Check if the power is already in VDM_POWERS
-  exists=$(jq --arg guid "$guid" '
-    map(select(has($guid))) | length > 0
-  ' <<< "$VDM_POWERS")
-
-  if [ "$exists" = "true" ]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
-# get a given power if it already exists in VDM_POWERS
-function getExistingPower() {
-  local guid="$1"
-  local existing_power
-
-  # Check if the power is already in VDM_POWERS
-  existing_power=$(jq --arg guid "$guid" '
-    .[] | select(has($guid))[$guid] // empty
-  ' <<< "$VDM_POWERS")
-
-  if [ -n "$existing_power" ]; then
-    echo "$existing_power"
-  fi
-}
-
-# add a json key-value pair to a power if it exists in VDM_POWERS
-function addJsonValueToPower() {
-  local guid="$1"
-  local value_key="$2"
-  local value="$3"
-
-  # Check if the power exists
-  if existingPower "$guid"; then
-    # Add or update the key-value pair in the power
-    VDM_POWERS=$(jq --arg guid "$guid" --arg value_key "$value_key" --argjson value "$value" '
-      map(
-        if has($guid) then
-          .[$guid][$value_key] = $value
-        else
-          .
-        end
-      )
-    ' <<< "$VDM_POWERS")
-
-    return 0
-  else
-    return 11
-  fi
-}
-
-function addValueToPower() {
-  local guid="$1"
-  local value_key="$2"
-  local value="$3"
-
-  # Check if the power exists
-  if existingPower "$guid"; then
-    # Add or update the key-value pair in the power
-    VDM_POWERS=$(jq --arg guid "$guid" --arg value_key "$value_key" --arg value "$value" '
-      map(
-        if has($guid) then
-          .[$guid][$value_key] = $value
-        else
-          .
-        end
-      )
-    ' <<< "$VDM_POWERS")
-
-    return 0
-  else
-    return 11
-  fi
-}
-
-# save the power in VDM_POWERS
-function savePower() {
-  local guid="$1"
-  local power="$2"
-
-  # Use jq to add the power to the dataset
-  VDM_POWERS=$(jq --argjson power "$power" --arg guid "$guid" '
-    . + [ { ($guid): $power } ]
-  ' <<< "$VDM_POWERS")
-}
-
-# Search for given power
-function searchForPower() {
-  local guid="$1"
-  # Use jq to search for the power and store the result
-  result=$(jq --arg guid "$guid" '
-      map(
-        select(.powers[$guid] != null) |
-        {
-          owner: .owner,
-          repo: .repo,
-          branch: .branch,
-          api: .api,
-          token: .token
-        } + .powers[$guid]
-      ) | .[0] // null
-    ' "$VDM_SUPERPOWERS_FILE")
-
-  # Check if a result was found
-  if [ -n "$result" ] && [ "$result" != "null" ]; then
-    # store the power found
-    savePower "${guid}" "${result}"
-    return 0
-  else
-    return 11
-  fi
-}
-
-# make sure the power data are loaded
-function setPowerData() {
-  local guid="$1"
-  local power
-  local class_path
-  local has_error
-  local has_data
-  # some local vars
-  local owner
-  local repo
-  local branch
-  local api
-  local token
-  local code
-  local settings
-  local namespace
-  local name
-  local use_name
-  # get existing power
-  power=$(getExistingPower "${guid}")
-  if [ -z "$power" ]; then
-    _echo "[error] We could not find power ${guid} in local set."
-    return 11
-  fi
-  clearPowerDataEnv
-  # stage the power details for the API call
-  has_error=false
-  has_data=true
-  # check if we already have the data loaded
-  setValueFromJson 'VDM_POWER_DATA' '.data' "${power}" || has_data=false
-  # always reset
-  clearPowerDataEnv
-  # check if we have the data already loaded
-  if $has_data; then
-    return 0
-  fi
-  # get the global config values if not set
-  setValueFromJson 'VDM_POWER_OWNER' '.owner' "${power}" || has_error=true
-  setValueFromJson 'VDM_POWER_REPO' '.repo' "${power}" || has_error=true
-  setValueFromJson 'VDM_POWER_BRANCH' '.branch' "${power}" || has_error=true
-  setValueFromJson 'VDM_POWER_API' '.api' "${power}" || has_error=true
-  setValueFromJson 'VDM_POWER_TOKEN' '.token' "${power}" || has_error=true
-  setValueFromJson 'VDM_POWER_CODE_URL' '.code' "${power}" || has_error=true
-  setValueFromJson 'VDM_POWER_SETTINGS_URL' '.settings' "${power}" || has_error=true
-  setValueFromJson 'VDM_POWER_NAMESPACE' '.namespace' "${power}" || has_error=true
-  setValueFromJson 'VDM_POWER_NAME' '.name' "${power}" || has_error=true
-  # check if we have some errors already
-  if $has_error; then
-    _echo "[error] We could not get ${VDM_POWER_PATH}->${VDM_POWER_NAME} details ${guid} because of missing config values."
-    # always clear memory
-    clearPowerDataEnv
-    return 11
-  fi
-  # replace any strings in namespace as needed
-  [ -n "${VDM_REPOSITORY_REPLACEMENT}" ] && VDM_POWER_NAMESPACE=$(strReplace "${VDM_POWER_NAMESPACE}")
-  # we must add these locally to avoid collusion
-  owner="${VDM_POWER_OWNER}"
-  repo="${VDM_POWER_REPO}"
-  branch="${VDM_POWER_BRANCH}"
-  api="${VDM_POWER_API}"
-  token="${VDM_POWER_TOKEN}"
-  code="${VDM_POWER_CODE_URL}"
-  settings="${VDM_POWER_SETTINGS_URL}"
-  namespace="${VDM_POWER_NAMESPACE}"
-  name="${VDM_POWER_NAME}"
-  use_name="${VDM_POWER_NAMESPACE}\\${VDM_POWER_NAME}"
-  # little information of progress
-  _echo "[info] Getting (${namespace}\\${name}) power (${guid}) details."
-  # we first load the settings data
-  if [[ "${branch}" == 'default' ]]; then
-    # get super power default branch
-    getGiteaApiBucket "raw/${settings}" "${owner}" "${repo}" "${api}" "${token}" || return 11
-  else
-    # get super power targeted branch
-    getGiteaApiBucket "raw/${settings}?ref=${branch}" "${owner}" "${repo}" "${api}" "${token}" || return 11
-  fi
-  # check that we got data
-  if [ -n "${VDM_API_BUCKET}" ]; then
-    addJsonValueToPower "${guid}" 'data' "${VDM_API_BUCKET}"
-    addValueToPower "${guid}" 'use_name' "${use_name}"
-  else
-    # always clear memory
-    clearPowerDataEnv
-    return 11
-  fi
-  # now we load the code
-  if [[ "${branch}" == 'default' ]]; then
-    # get super power default branch
-    getGiteaApiFile "raw/${code}" "${owner}" "${repo}" "${api}" "${token}" || return 11
-  else
-    # get super power targeted branch
-    getGiteaApiFile "raw/${code}?ref=${branch}" "${owner}" "${repo}" "${api}" "${token}" || return 11
-  fi
-  # check that we got data
-  if [ -n "${VDM_API_FILE_PATH}" ] && [ -f "${VDM_API_FILE_PATH}" ]; then
-    # add the name space
-    addNamespace "${namespace}"
-    # set class folder path
-    class_path="${VDM_PACKAGE_SRC_DIR}/${namespace//\\//}"
-    # make sure the directories exist
-    mkdir -p "${class_path}"
-    # move the class into place
-    mv -f "${VDM_API_FILE_PATH}" "${class_path}/${name}.php"
-    # replace any strings in code as needed
-    [ -n "${VDM_REPOSITORY_REPLACEMENT}" ] && fileReplaceStrings "${class_path}/${name}.php"
-  else
-    # always clear memory
-    clearPowerDataEnv
-    return 11
-  fi
-
-  # always clear memory
-  clearPowerDataEnv
-
-  return 0
-}
-
-# load the repositories where we can search for powers
-function loadSuperpowerRepositories() {
-  # little information of progress
-  _echo "[info] Loading the Power Repositories..."
-  # check for errors
-  local has_error=false
-  local has_files=false
-  local tmp_api
-  local tmp_token
-  # load all the repositories
-  for repository in $(echo "${VDM_CONFIG_DATA}" | jq -c '.repositories[]'); do
-    # reset with each loop
-    has_error=false
-    # get the global config values if not set
-    setValueFromJson 'VDM_OWNER' '.owner' "${repository}" || has_error=true
-    setValueFromJson 'VDM_REPO' '.repo' "${repository}" || has_error=true
-    setValueFromJson 'VDM_BRANCH' '.branch' "${repository}" || VDM_BRANCH="default"
-    setValueFromJson 'VDM_API_NAME' '.api_name' "${repository}" || VDM_API_NAME="VDM_GLOBAL_API"
-    setValueFromJson 'VDM_TOKEN_NAME' '.token_name' "${repository}" || VDM_TOKEN_NAME="VDM_GLOBAL_TOKEN"
-    # set the package (api/toke)
-    tmp_api=${!VDM_API_NAME}
-    tmp_token=${!VDM_TOKEN_NAME}
-    # allow direct overriding (api/toke)
-    getConfigValue 'VDM_API' '.repository.api' false || VDM_API="${tmp_api}"
-    getConfigValue 'VDM_TOKEN' '.repository.token' false || VDM_TOKEN="${tmp_token}"
-    # check if we have some errors already
-    if $has_error; then
-      clearFileEnv
-      continue
+  # set the target repository details
+  function getRepositoryDetails() {
+    # make sure we have package details
+    if [[ "${VDM_CONFIG_DATA}" =~ '"repository"' ]]; then
+      # little information of progress
+      _echo "[info] Loading the Repository Details..."
+      # check for errors
+      local has_error=false
+      local tmp_token
+      local tmp_url
+      local tmp_api
+      # get the global config values if not set
+      getConfigValue 'VDM_REPOSITORY_OWNER' '.repository.owner' || has_error=true
+      getConfigValue 'VDM_REPOSITORY_REPO' '.repository.repo' || has_error=true
+      getConfigValue 'VDM_REPOSITORY_BRANCH' '.repository.branch' false || VDM_REPOSITORY_BRANCH="default"
+      getConfigValue 'VDM_REPOSITORY_TOKEN_NAME' '.repository.token_name' false || VDM_REPOSITORY_TOKEN_NAME="VDM_GLOBAL_TOKEN"
+      getConfigValue 'VDM_REPOSITORY_URL_NAME' '.repository.url_name' false || VDM_REPOSITORY_URL_NAME="VDM_GLOBAL_URL"
+      getConfigValue 'VDM_REPOSITORY_API_NAME' '.repository.api_name' false || VDM_REPOSITORY_API_NAME="VDM_GLOBAL_API"
+      getConfigValue 'VDM_REPOSITORY_REPLACEMENT' '.repository.replace' false || unset VDM_REPOSITORY_REPLACEMENT
+      # set the package (api/url/toke)
+      tmp_token=${!VDM_REPOSITORY_TOKEN_NAME}
+      tmp_url=${!VDM_REPOSITORY_URL_NAME}
+      tmp_api=${!VDM_REPOSITORY_API_NAME}
+      # allow direct overriding (api/url/toke)
+      getConfigValue 'VDM_REPOSITORY_TOKEN' '.repository.token' false || VDM_REPOSITORY_TOKEN="${tmp_token}"
+      getConfigValue 'VDM_REPOSITORY_URL' '.repository.url' false || VDM_REPOSITORY_URL="${tmp_url}"
+      getConfigValue 'VDM_REPOSITORY_API' '.repository.api' false || VDM_REPOSITORY_API="${tmp_api}"
+      # check if we have some errors already
+      $has_error && return 17
+      # make globally available
+      export VDM_REPOSITORY_BRANCH
+      export VDM_REPOSITORY_TOKEN
+      export VDM_REPOSITORY_URL
+      export VDM_REPOSITORY_API
+      # success
+      return 0
+    else
+      # failed
+      return 17
     fi
-    # make globally available
-    export VDM_BRANCH
-    export VDM_TOKEN
-    export VDM_API
-    # load the super power index
-    getSuperpowerIndex && has_files=true
-  done
-  # check if we found a file
-  $has_files || return 13
-  # set the data in a file
-  echo "${VDM_SUPERPOWERS}" > "$VDM_SUPERPOWERS_FILE"
-  unset VDM_SUPERPOWERS
-  # success
-  return 0
-}
+  }
 
-# get the superpower index values
-function getSuperpowerIndex() {
-  # little information of progress
-  _echo "[info] Getting (${VDM_OWNER}/${VDM_REPO}) power index"
-  if [[ "${VDM_BRANCH}" == 'default' ]]; then
-    # get super power default branch
-    getGiteaApiBucket "raw/super-powers.json" "${VDM_OWNER}" "${VDM_REPO}" "${VDM_API}" "${VDM_TOKEN}" || return 11
-  else
-    # get super power targeted branch
-    getGiteaApiBucket "raw/super-powers.json?ref=${VDM_BRANCH}" "${VDM_OWNER}" "${VDM_REPO}" "${VDM_API}" "${VDM_TOKEN}" || return 11
-  fi
-  # check that we got data
-  if [ -n "${VDM_API_BUCKET}" ]; then
-    setSuperpowerIndex || return 11
-  else
-    return 11
-  fi
-
-  return 0
-}
-
-# store/set the super power index
-function setSuperpowerIndex() {
-  local new_entry
-
-  # Create a JSON object from the global variables
-  new_entry=$(jq -n \
-    --arg owner "$VDM_OWNER" \
-    --arg repo "$VDM_REPO" \
-    --arg branch "$VDM_BRANCH" \
-    --arg api "$VDM_API" \
-    --arg token "$VDM_TOKEN" \
-    --argjson powers "$VDM_API_BUCKET" \
-    '{
-      owner: $owner,
-      repo: $repo,
-      branch: $branch,
-      api: $api,
-      token: $token,
-      powers: $powers
-    }')
-
-  # Append the new entry to the VDM_SUPERPOWERS array
-  VDM_SUPERPOWERS=$(echo "$VDM_SUPERPOWERS" | jq --argjson new_entry "$new_entry" '. += [$new_entry]')
-
-  # rest all power env (since we have it in our global VDM_SUPERPOWERS now)
-  clearPowerEnv
-}
-
-# Function to validate a GUID
-function validateGuid() {
-  local guid=$1
-  # Define the regex pattern for GUID
-  local regex='^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$'
-  if [[ $guid =~ $regex ]]; then
+  # set the Package Path
+  function setPackageDir() {
+    # little information of progress
+    _echo "[info] Setting the Package Directories..."
+    # the full project path
+    VDM_PACKAGE_DIR="${VDM_MAIN_DIR}/${VDM_REPOSITORY_REPO}"
+    VDM_PACKAGE_GIT_DIR="${VDM_MAIN_DIR}/git"
+    VDM_PACKAGE_SRC_DIR="${VDM_PACKAGE_DIR}/src"
+    VDM_PACKAGE_ZIP_FILE="${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}.${VDM_PACKAGE_VERSION:-1.0.0}.zip"
+    # makes the project path available
+    export VDM_PACKAGE_DIR
+    export VDM_PACKAGE_GIT_DIR
+    export VDM_PACKAGE_SRC_DIR
+    export VDM_PACKAGE_ZIP_FILE
+    # always remove previous files (if found)
+    clearFiles
+    # set the license file
+    VDM_PACKAGE_LICENSE_FILE_PATH="${VDM_PACKAGE_DIR}/LICENSE"
+    # set the package composer file
+    VDM_PACKAGE_COMPOSER_FILE="${VDM_PACKAGE_DIR}/composer.json"
+    # set the README
+    VDM_README_MD="${VDM_PACKAGE_DIR}/README.md"
+    # makes the project file locations available
+    export VDM_PACKAGE_LICENSE_FILE_PATH
+    export VDM_PACKAGE_COMPOSER_FILE
+    export VDM_README_MD
+    # make sure the packages dir is created
+    mkdir -p "${VDM_PACKAGE_DIR}" || return 12
+    #make sure the src dir is created
+    mkdir -p "${VDM_PACKAGE_SRC_DIR}" || return 12
+    #make sure the git dir is created
+    mkdir -p "${VDM_PACKAGE_GIT_DIR}" || return 12
+    # success
     return 0
-  fi
-  return 1
-}
+  }
 
-# Function to manage the namespaces
-function addNamespace() {
-  local namespace="$1"
-  local extracted_namespace
-  # Extract the first two segments of the namespace
-  # shellcheck disable=SC1003
-  extracted_namespace=$(echo "$namespace" | awk -F'\\' '{print $1 "\\" $2}')
-  # Check if the extracted namespace already exists in the array
-  for ns in "${VDM_TARGET_NAMESPACE[@]}"; do
-    if [ "$ns" == "$extracted_namespace" ]; then
-      return
+  # set the Powers
+  function setPowers() {
+    # little information of progress
+    _echo "[info] Loading the Powers..."
+    # check for powers
+    local has_powers=false
+    # load all the repositories
+    loadSuperpowerRepositories || return 13
+    # Check if the .exclude-powers[] field exists and is not empty
+    if [ "$(echo "${VDM_CONFIG_DATA}" | jq '.exclude_powers | length')" -gt 0 ]; then
+      # Iterate over the exclude-powers array
+      for exclude_power in $(echo "${VDM_CONFIG_DATA}" | jq -r '.exclude_powers[]'); do
+        # Load the exclude power
+        loadExcludePower "${exclude_power}"
+      done
     fi
-  done
-  # Add the extracted namespace to the array if it doesn't exist
-  VDM_TARGET_NAMESPACE+=("$extracted_namespace")
-}
+    # search for the powers
+    for power in $(echo "${VDM_CONFIG_DATA}" | jq -r '.powers[]'); do
+      # load the power
+      loadPower "${power}" && has_powers=true
+    done
+    # check if we found a file
+    $has_powers || return 13
+    # success
+    return 0
+  }
 
-# extract Joomla use statements
-function extractJoomlaUseStatements() {
-  local header_string="$1"
-  local use_name="$2"
-  # Check if the header string is empty
-  if [[ -z "$header_string" ]]; then
-    return
-  fi
-  # Loop through each line in the header string
-  while IFS= read -r line; do
-    # Check if the line contains a Joomla use statement
-    if [[ "$line" =~ ^use\ Joomla ]]; then
-      # Extract the namespace part (remove 'use ' and ';')
-      namespace=$(echo "$line" | sed -E 's/use ([^ ]+)( as [^;]*)?;/\1/')
-      # Trim leading and trailing spaces
-      namespace=$(echo "$namespace" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-      if [[ ! $namespace =~ Joomla\\CMS\\ ]]; then
-        local extracted_namespace
-        # shellcheck disable=SC1003
-        extracted_namespace=$(echo "$namespace" | awk -F'\\' '{print $1 "\\" $2}')
-        JOOMLA_FRAMEWORK["$extracted_namespace"]=1
-        setLinkedDependencyClasses "${extracted_namespace}" "${use_name//\\//}" "${use_name}"
+  # load the exclude power
+  function loadExcludePower() {
+    local guid="$1"
+    if [[ $guid == "//"* ]]; then
+      return 0 # skip comments ;)
+    elif [ ${#guid} -ge 30 ] && validateGuid "${guid}"; then
+      setExcludePower "$guid" || return 19
+      return 0
+    fi
+    return 0
+  }
+
+  # set the exclude power found
+  function setExcludePower() {
+    local guid="$1"
+
+    # Remove the power from VDM_POWERS if it exists
+    if existingPower "$guid"; then
+      VDM_POWERS=$(jq --arg guid "$guid" '
+        map(select(. != $guid))
+      ' <<< "$VDM_POWERS")
+    fi
+
+    # check if we have already loaded this power
+    existingExcludePower "${guid}" && return 0
+
+    # Add the guid to VDM_EXCLUDE_POWERS
+    VDM_EXCLUDE_POWERS=$(jq --arg guid "$guid" '
+      . + [ $guid ]
+    ' <<< "$VDM_EXCLUDE_POWERS")
+
+    return 0
+  }
+
+  # load the power
+  function loadPower() {
+    local guid="$1"
+    if [[ $guid == "//"* ]]; then
+      return 0 # skip comments ;)
+    elif [ ${#guid} -ge 30 ] && validateGuid "${guid}"; then
+      if  existingExcludePower "$guid"; then
+        return 0 # skip excluded ;)
       else
-        # Add the namespace to the associative array
-        JOOMLA_NAMESPACES["$namespace"]=1
-        setLinkedDependencyClasses "${namespace}" "${use_name//\\//}" "${use_name}"
+        setPower "$guid" || return 19
+        loadChildrenPowers "$guid" || return 19
+        return 0
       fi
     fi
-  done <<< "$header_string"
-}
-
-# set the linked classes to the dependencies
-function setLinkedDependencyClasses() {
-  local main_key="$1"
-  local sub_key="$2"
-  local value="$3"
-
-  # Use jq to update the JSON structure
-  VDM_LINKED_CLASSES=$(echo "$VDM_LINKED_CLASSES" | jq --arg mk "$main_key" --arg sk "$sub_key" --arg val "$value" '
-    .[$mk][$sk] = $val
-  ')
-}
-
-# just to clear all file ENVs
-function clearPowerEnv() {
-  # SET IN: loadPowerRepositories
-  unset VDM_OWNER
-  unset VDM_REPO
-  unset VDM_BRANCH
-  unset VDM_TOKEN_NAME
-  unset VDM_TOKEN
-  unset VDM_API_NAME
-  unset VDM_API
-}
-
-# just to clear all file ENVs
-function clearPowerDataEnv() {
-  # SET IN: setPowerData
-  unset VDM_POWER_DATA
-  unset VDM_POWER_OWNER
-  unset VDM_POWER_REPO
-  unset VDM_POWER_BRANCH
-  unset VDM_POWER_API
-  unset VDM_POWER_TOKEN
-  unset VDM_POWER_CODE_URL
-  unset VDM_POWER_SETTINGS_URL
-  unset VDM_POWER_PATH
-  unset VDM_POWER_NAME
-}
-
-# just to clear all file ENVs
-function clearPowerChildrenEnv() {
-  # SET IN: loadChildrenPowers
-  unset VDM_POWER_CHILDREN
-  unset VDM_POWER_DATA
-  unset VDM_POWER_EXTENDS
-  unset VDM_POWER_IMPLEMENTS
-  unset VDM_POWER_LOAD_SELECTION
-  unset VDM_POWER_USE_SELECTION
-  unset VDM_POWER_HEAD
-  unset VDM_POWER_USE_NAME
-  unset VDM_POWER_COMPOSER
-}
-
-# clear the main environment variables
-function clearMainEnv() {
-  # just to be sure
-  clearPowerEnv
-  clearPowerDataEnv
-  clearPowerChildrenEnv
-  # clear all exported package details
-  # SET IN: getRepositoryDetails
-  unset VDM_REPOSITORY_OWNER
-  unset VDM_REPOSITORY_REPO
-  unset VDM_REPOSITORY_BRANCH
-  unset VDM_REPOSITORY_TOKEN_NAME
-  unset VDM_REPOSITORY_URL_NAME
-  unset VDM_REPOSITORY_API_NAME
-  unset VDM_REPOSITORY_TOKEN
-  unset VDM_REPOSITORY_URL
-  unset VDM_REPOSITORY_API
-  # SET IN: setPackageDir
-  unset VDM_PACKAGE_DIR
-  unset VDM_PACKAGE_GIT_DIR
-  unset VDM_PACKAGE_SRC_DIR
-  unset VDM_PACKAGE_ZIP_FILE
-  unset VDM_PACKAGE_LICENSE_FILE_PATH
-  unset VDM_PACKAGE_COMPOSER_FILE
-  unset VDM_README_MD
-  # SET IN: getPackageDetails
-  unset VDM_CONFIG_DATA
-  unset VDM_PACKAGER
-  unset VDM_PACKAGER_URL
-  unset VDM_GLOBAL_TOKEN
-  unset VDM_GLOBAL_API
-  unset VDM_GLOBAL_URL
-  unset VDM_NAME
-  unset VDM_CODE_NAME
-  unset VDM_PACKAGE_TYPE
-  unset VDM_PACKAGE_DESCRIPTION
-  unset VDM_PACKAGE_HOMEPAGE
-  unset VDM_PACKAGE_KEYWORDS
-  unset VDM_PACKAGE_PHP
-  unset VDM_PACKAGE_JOOMLA_FRAMEWORK
-  unset VDM_PACKAGE_VERSION
-  unset VDM_LICENSE
-  unset VDM_LICENSE_FILE
-  unset VDM_LICENSE_FILE_PATH
-  unset VDM_AUTHOR
-  unset VDM_AUTHOR_EMAIL
-  unset VDM_AUTHOR_URL
-  unset VDM_AUTHOR_ROLE
-  # SET IN: getGiteaApiBucket
-  unset VDM_API_BUCKET
-  # SET IN: getGiteaApiFile
-  if [ -n "${VDM_API_FILE_PATH}" ] && [ -f "${VDM_API_FILE_PATH}" ]; then
-    rm -f "${VDM_API_FILE_PATH}"
-  fi
-  unset VDM_API_FILE_PATH
-  # SET IN: Global
-  unset VDM_TARGET_NAMESPACE
-  # clear the temp files
-  rm -f "$VDM_SUPERPOWERS_FILE"
-}
-
-# clear all this projects files
-function clearFiles() {
-  # always remove files
-  rm -fr "${VDM_PACKAGE_DIR:?}"
-  rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_REPOSITORY_REPO:?}"
-  rm -fr "${VDM_PACKAGE_ZIP_FILE:?}"
-}
-
-# get value from config
-function getConfigValue() {
-  # with config values we only try to load it
-  # if it is not already set
-  # so if we find that it is set
-  # we're done search
-  [ -n "${!1}" ] && return 0
-  # get what we can from the config if not already set in the .env file
-  # so to set the value globally use the .env option
-  # to set per project use the config file of the project
-  setValueFromJson "$1" "$2" "$VDM_CONFIG_DATA" || {
-    # give little heads-up if not blocked
-    "${3:-true}" && echo >&2 "[error] We require ($2) for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in $VDM_PACKAGE_CONF_FILE."
-    # we had no success
     return 19
   }
-  # success
-  return 0
-}
 
-# Set value from JSON
-function setValueFromJson() {
-    local target_var="$1"
-    local value
-    # Capture the value and the return status from getValueFromJson
-    value=$(getValueFromJson "$2" "$3")
-    local status=$?
-    # Check the status and return 19 if getValueFromJson failed
-    if [[ $status -ne 0 ]]; then
-        return 19
-    fi
-    # Safely use declare to dynamically set the value and make it global
-    declare -g "$target_var"="$value"
-}
+  # set the power found
+  function setPower() {
+    local guid="$1"
+    # check if we have already loaded this power
+    existingPower "${guid}" && return 0
+    # try to load it
+    searchForPower "${guid}" || {
+      _echo "[error] We could not find power ${guid}."
+      return 11
+    }
+    # set the power details
+    setPowerData "${guid}" || {
+      _echo "[error] We could not set the power ${guid} data."
+      return 11
+    }
 
-# Get value from JSON
-function getValueFromJson() {
-    local json_key="$1"
-    local json_data="$2"
-    local value
-    # Check if the necessary parameters are provided
-    if [[ -z "$json_key" ]]; then
-        # [error] Missing required key parameter.
-        return 19
-    fi
-    if [[ -z "$json_data" ]]; then
-        # [error] JSON data is empty.
-        return 19
-    fi
-    # Attempt to extract the value using jq
-    if ! value=$(echo "$json_data" | jq -r "$json_key"); then
-        # [error] Failed to parse JSON data.
-        return 19
-    fi
-    # Check if the value is 'null' or empty
-    if [[ "$value" == "null" || -z "$value" ]]; then
-        # [error] Key not found or null value.
-        return 19
-    fi
-    # Safely return the value
-    echo "$value"
-}
-
-# make API call
-function getGiteaApiBucket() {
-  # the locals
-  local mode="${1}"
-  local owner="${2}"
-  local repo="${3}"
-  local api="${4}"
-  local token="${5}"
-  local json_data
-  local message
-  # each time reset
-  unset VDM_API_BUCKET
-  # give message
-  _echo "[info] Getting ${mode} information from ${owner}/${repo} repository."
-  # get the json data
-  json_data=$(curl -s -H "Authorization: token ${token}" -H 'accept: application/json' -X 'GET' "${api}/repos/${owner}/${repo}/${mode}")
-  # check for error
-  if [[ "${json_data}" =~ '"errors"' ]] && [[ "${json_data}" =~ '"message"' ]]; then
-    # get the message
-    message=$(echo "${json_data}" | jq -r ".message")
-    # check that we have tags (not ideal, but to catch wrong repo path)
-    _echo "[error] failed to get ${mode} from ${owner}/${repo} repository [${message}]."
-    # we an add more later
-    return 12
-  elif [ "${json_data}" = '[]' ]; then
-    # check that we have tags (not ideal, but to catch wrong repo path)
-    _echo "[error] failed to get ${mode} from ${owner}/${repo} repository."
-    # we an add more later
-    return 12
-  fi
-  # get the latest
-  VDM_API_BUCKET="${json_data}"
-  # success
-  export VDM_API_BUCKET
-  # success
-  return 0
-}
-
-# make API call
-function getGiteaApiFile() {
-  # the locals
-  local mode="${1}"
-  local owner="${2}"
-  local repo="${3}"
-  local api="${4}"
-  local token="${5}"
-  local tmp_file
-  local message
-
-  # each time reset
-  unset VDM_API_FILE_PATH
-
-  # give message
-  _echo "[info] Getting ${mode} information from ${owner}/${repo} repository."
-
-  # create a temporary file
-  tmp_file=$(mktemp)
-
-  # get the json data and store in tmp file
-  curl -s -H "Authorization: token ${token}" -H 'accept: application/json' -X 'GET' "${api}/repos/${owner}/${repo}/${mode}" -o "${tmp_file}"
-
-  # check for error
-  if grep -q '"errors"' "${tmp_file}" && grep -q '"message"' "${tmp_file}"; then
-    # get the message
-    message=$(jq -r ".message" < "${tmp_file}")
-    # give error message
-    _echo "[error] failed to get ${mode} from ${owner}/${repo} repository [${message}]."
-    # remove tmp file
-    rm -f "${tmp_file}"
-    # return error code
-    return 12
-  elif [ "$(cat "${tmp_file}")" = '[]' ]; then
-    # check for empty array response
-    _echo "[error] failed to get ${mode} from ${owner}/${repo} repository."
-    # remove tmp file
-    rm -f "${tmp_file}"
-    # return error code
-    return 12
-  fi
-
-  # if no error, set the VDM_API_FILE_PATH
-  VDM_API_FILE_PATH="${tmp_file}"
-
-  # export variables
-  export VDM_API_FILE_PATH
-
-  # success
-  return 0
-}
-
-# Function to get autoloaders
-function getAutoLoaders() {
-  # Check if namespaces array is empty
-  # shellcheck disable=SC2128
-  if [ -z "$VDM_TARGET_NAMESPACE" ] || [ ${#VDM_TARGET_NAMESPACE[@]} -eq 0 ]; then
-    echo "{}"
     return 0
-  fi
-  local json
-  local escaped_namespace
-  local path
-  # Initialize the JSON string
-  json="{"
-  # Iterate over the namespaces and populate the JSON string
-  for namespace in "${VDM_TARGET_NAMESPACE[@]}"; do
-    # Escape backslashes in namespace for JSON
-    escaped_namespace=$(echo "$namespace\\" | sed 's/\\/\\\\/g')
-    # Convert namespace to path
-    path="src/${namespace//\\//}"
-    # Append to JSON string
-    json+="\"$escaped_namespace\":\"$path\","
-  done
-  # Remove the trailing comma and close the JSON object
-  json="${json%,}}"
-  # Unset the global variable
-  unset VDM_TARGET_NAMESPACE
-  echo "${json}"
-}
+  }
 
-# set the Package XML Details
-function setPackageComposerFile() {
-  # little information of progress
-  _echo "[info] Setting the Package Composer File..."
-  local composer_json
-  # Start building the JSON object
-  composer_json=$(jq -n \
-      --arg name "$VDM_NAME" \
-      --arg type "$VDM_PACKAGE_TYPE" \
-      --arg description "$VDM_PACKAGE_DESCRIPTION" \
-      --arg homepage "$VDM_PACKAGE_HOMEPAGE" \
-      --arg license "$VDM_LICENSE" \
-      --arg php_version "$VDM_PACKAGE_PHP" \
-      --argjson autoloader "$(getAutoLoaders)" \
-      '{
-          name: $name,
-          type: $type,
-          description: $description,
-          homepage: $homepage,
-          license: $license,
-          require: {
-              php: $php_version
-          },
-          autoload: {
-              "psr-4": $autoloader
-          }
-      }'
-  )
-  # Add keywords if they exist
-  if [ -n "$VDM_PACKAGE_KEYWORDS" ]; then
-      composer_json=$(echo "$composer_json" | jq --argjson keywords "$VDM_PACKAGE_KEYWORDS" '. + {keywords: $keywords}')
-  fi
-  # add the Joomla framework classes
-  if [ -n "${VDM_PACKAGE_JOOMLA_FRAMEWORK}" ] && [ ${#JOOMLA_FRAMEWORK[@]} -ge 1 ]; then
-    classes_required=$(getJoomlaFrameworkRequired)
-    composer_json=$(echo "$composer_json" | jq --argjson classes_required "$classes_required" '.require += $classes_required')
-  fi
-  # Build the author object conditionally
-  AUTHOR_OBJECT=$(jq -n \
-      --arg name "$VDM_AUTHOR" \
-      --arg email "$VDM_AUTHOR_EMAIL" \
-      --arg homepage "$VDM_AUTHOR_URL" \
-      --arg role "$VDM_AUTHOR_ROLE" \
-      '{
-          name: $name,
-          email: $email,
-          homepage: $homepage,
-          role: $role
-      } | del(.[] | select(. == ""))'
-  )
-  if [ "$(echo "$AUTHOR_OBJECT" | jq 'keys | length')" -gt 0 ]; then
-      composer_json=$(echo "$composer_json" | jq --argjson author "$AUTHOR_OBJECT" '. + {authors: [$author]}')
-  fi
-  # Output the final composer.json content to the specified file
-  echo "$composer_json" | jq . > "$VDM_PACKAGE_COMPOSER_FILE"
-}
-
-# Convert JOOMLA_FRAMEWORK to a require list
-function getJoomlaFrameworkRequired() {
-  # Initialize the JSON string
-  json="{"
-  first=true
-  for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
-    if [ "$first" = true ]; then
-      first=false
-    else
-      json+=","
+  # function to load all the children/linked powers
+  function loadChildrenPowers() {
+    local guid="$1"
+    local power
+    local power_data
+    local has_error
+    local children_loaded
+    # some local vars
+    local guids
+    local extends
+    local extends_interfaces
+    local implements
+    local use_selection
+    local load_selection
+    # stage the power details for the API call
+    has_error=false
+    children_loaded=true
+    # get existing power
+    power=$(getExistingPower "${guid}")
+    if [ -z "$power" ]; then
+      _echo "[error] We could not find power ${guid} in local set."
+      return 11
     fi
-    json+="\"${key//\\//}\": \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\""
-  done
-  json+="}"
-  echo -n "$json"
-}
-
-# Convert JOOMLA_FRAMEWORK to a Markdown list
-function getJoomlaFramework() {
-  if [ ${#JOOMLA_FRAMEWORK[@]} -eq 0 ]; then
-    echo -n ""
-  else
-    local markdown_list="\n## Joomla Framework Dependencies\n\n"
-    if [ -z "${VDM_PACKAGE_JOOMLA_FRAMEWORK}" ]; then
-      markdown_list+=">You should add the following to your project to ensure the Joomla! framework classes are included.\n\n"
-      for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
-        markdown_list+="- \`composer require ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\`\n";
-        markdown_list+=$(getLinkedClassesMarkdown "${key}");
-        markdown_list+="\n";
-      done
-    else
-      markdown_list+=">We have added the following framework classes to the required list of this Composer package.\n\n"
-      for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
-        markdown_list+="- ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\n";
-        markdown_list+=$(getLinkedClassesMarkdown "${key}");
-        markdown_list+="\n";
-      done
+    # check if we already have the children loaded
+    setValueFromJson 'VDM_POWER_CHILDREN' '.children' "${power}" || children_loaded=false
+    # check if we have the children already loaded
+    if $children_loaded; then
+      # always clear memory
+      clearPowerChildrenEnv
+      return 0
     fi
-    echo -e "$markdown_list"
-  fi
-}
+    # stop children from being loaded again
+    addValueToPower "${guid}" 'children' "done"
+    # get the global config values if not set
+    setValueFromJson 'VDM_POWER_DATA' '.data' "${power}" || has_error=true
+    setValueFromJson 'VDM_POWER_USE_NAME' '.use_name' "${power}" || has_error=true
+    # could we get the data
+    if $has_error; then
+      _echo "[error] We could not get power data for ${guid} so the dependencies could not be loaded."
+      # always clear memory
+      clearPowerChildrenEnv
+      return 11
+    fi
+    # we must add these locally to avoid collusion
+    power_data="${VDM_POWER_DATA}"
+    # get th values if set
+    setValueFromJson 'VDM_POWER_EXTENDS' '.extends' "${power_data}"
+    setValueFromJson 'VDM_POWER_EXTENDS_INTERFACES' '.extendsinterfaces' "${power_data}"
+    setValueFromJson 'VDM_POWER_IMPLEMENTS' '.implements' "${power_data}"
+    setValueFromJson 'VDM_POWER_USE_SELECTION' '.use_selection' "${power_data}"
+    setValueFromJson 'VDM_POWER_LOAD_SELECTION' '.load_selection' "${power_data}"
+    setValueFromJson 'VDM_POWER_HEAD' '.head' "${power_data}"
+    # extract any joomla dependencies we might find
+    extractJoomlaUseStatements "${VDM_POWER_HEAD:-none}" "${VDM_POWER_USE_NAME}"
+    # TODO add more dynamic options
+    # setValueFromJson 'VDM_POWER_COMPOSER' '.composer' "${power_data}"
+    # check if we have VDM_POWER_EXTENDS
+    # we must add these locally to avoid collusion
+    extends="${VDM_POWER_EXTENDS:-0}"
+    extends_interfaces="${VDM_POWER_EXTENDS_INTERFACES:-null}"
+    implements="${VDM_POWER_IMPLEMENTS:-null}"
+    use_selection="${VDM_POWER_USE_SELECTION:-null}"
+    load_selection="${VDM_POWER_LOAD_SELECTION:-null}"
+    if [ "${extends}" != "0" ]; then
+      loadPower "${extends}"
+    fi
+    # Process the JSON array in extends_interfaces if it's not empty or null
+    if [ "${extends_interfaces}" != "null" ]; then
+        guids=$(echo "${extends_interfaces}" | jq -r '.[]')
+        for guid in $guids; do
+            loadPower "$guid"
+        done
+    fi
+    # Process the JSON array in implements if it's not empty or null
+    if [ "${implements}" != "null" ]; then
+        guids=$(echo "${implements}" | jq -r '.[]')
+        for guid in $guids; do
+            loadPower "$guid"
+        done
+    fi
+    # Process the JSON object in use_selection if it's not empty or null
+    if [ "${use_selection}" != "null" ]; then
+        uses=$(echo "${use_selection}" | jq -r '.[] | .use')
+        for use in $uses; do
+            loadPower "$use"
+        done
+    fi
+    # Process the JSON object in load_selection if it's not empty or null
+    if [ "${load_selection}" != "null" ]; then
+        loads=$(echo "${load_selection}" | jq -r '.[] | .load')
+        for load in $loads; do
+            loadPower "$load"
+        done
+    fi
+    # always clear memory
+    clearPowerChildrenEnv
 
-# Convert JOOMLA_NAMESPACES to a Markdown list
-function getJoomlaDependencies() {
-  if [ ${#JOOMLA_NAMESPACES[@]} -eq 0 ]; then
-    echo -n ""
-  else
-    local markdown_list="\n## Joomla CMS Dependencies\n\n"
-    for key in $(printf "%s\n" "${!JOOMLA_NAMESPACES[@]}" | sort); do
-      markdown_list+="- ${key}\n";
-      markdown_list+=$(getLinkedClassesMarkdown "${key}");
-      markdown_list+="\n";
+    return 0
+  }
+
+  # Check if a given power already exists in VDM_EXCLUDE_POWERS
+  function existingExcludePower() {
+    local guid="$1"
+    local exists
+
+    # Check if the power is already in VDM_EXCLUDE_POWERS
+    exists=$(jq --arg guid "$guid" '
+        map(select(. == $guid)) | length > 0
+      ' <<< "$VDM_EXCLUDE_POWERS")
+
+    if [ "$exists" = "true" ]; then
+      return 0  # GUID exists
+    else
+      return 1  # GUID does not exist
+    fi
+  }
+
+  # Check if a given power already exists in VDM_POWERS
+  function existingPower() {
+    local guid="$1"
+    local exists
+
+    # Check if the power is already in VDM_POWERS
+    exists=$(jq --arg guid "$guid" '
+      map(select(has($guid))) | length > 0
+    ' <<< "$VDM_POWERS")
+
+    if [ "$exists" = "true" ]; then
+      return 0
+    else
+      return 1
+    fi
+  }
+
+  # get a given power if it already exists in VDM_POWERS
+  function getExistingPower() {
+    local guid="$1"
+    local existing_power
+
+    # Check if the power is already in VDM_POWERS
+    existing_power=$(jq --arg guid "$guid" '
+      .[] | select(has($guid))[$guid] // empty
+    ' <<< "$VDM_POWERS")
+
+    if [ -n "$existing_power" ]; then
+      echo "$existing_power"
+    fi
+  }
+
+  # add a json key-value pair to a power if it exists in VDM_POWERS
+  function addJsonValueToPower() {
+    local guid="$1"
+    local value_key="$2"
+    local value="$3"
+
+    # Check if the power exists
+    if existingPower "$guid"; then
+      # Add or update the key-value pair in the power
+      VDM_POWERS=$(jq --arg guid "$guid" --arg value_key "$value_key" --argjson value "$value" '
+        map(
+          if has($guid) then
+            .[$guid][$value_key] = $value
+          else
+            .
+          end
+        )
+      ' <<< "$VDM_POWERS")
+
+      return 0
+    else
+      return 11
+    fi
+  }
+
+  function addValueToPower() {
+    local guid="$1"
+    local value_key="$2"
+    local value="$3"
+
+    # Check if the power exists
+    if existingPower "$guid"; then
+      # Add or update the key-value pair in the power
+      VDM_POWERS=$(jq --arg guid "$guid" --arg value_key "$value_key" --arg value "$value" '
+        map(
+          if has($guid) then
+            .[$guid][$value_key] = $value
+          else
+            .
+          end
+        )
+      ' <<< "$VDM_POWERS")
+
+      return 0
+    else
+      return 11
+    fi
+  }
+
+  # save the power in VDM_POWERS
+  function savePower() {
+    local guid="$1"
+    local power="$2"
+
+    # Use jq to add the power to the dataset
+    VDM_POWERS=$(jq --argjson power "$power" --arg guid "$guid" '
+      . + [ { ($guid): $power } ]
+    ' <<< "$VDM_POWERS")
+  }
+
+  # Search for given power
+  function searchForPower() {
+    local guid="$1"
+    # Use jq to search for the power and store the result
+    result=$(jq --arg guid "$guid" '
+        map(
+          select(.powers[$guid] != null) |
+          {
+            owner: .owner,
+            repo: .repo,
+            branch: .branch,
+            api: .api,
+            token: .token
+          } + .powers[$guid]
+        ) | .[0] // null
+      ' "$VDM_SUPERPOWERS_FILE")
+
+    # Check if a result was found
+    if [ -n "$result" ] && [ "$result" != "null" ]; then
+      # store the power found
+      savePower "${guid}" "${result}"
+      return 0
+    else
+      return 11
+    fi
+  }
+
+  # make sure the power data are loaded
+  function setPowerData() {
+    local guid="$1"
+    local power
+    local class_path
+    local has_error
+    local has_data
+    # some local vars
+    local owner
+    local repo
+    local branch
+    local api
+    local token
+    local code
+    local settings
+    local namespace
+    local name
+    local use_name
+    # get existing power
+    power=$(getExistingPower "${guid}")
+    if [ -z "$power" ]; then
+      _echo "[error] We could not find power ${guid} in local set."
+      return 11
+    fi
+    clearPowerDataEnv
+    # stage the power details for the API call
+    has_error=false
+    has_data=true
+    # check if we already have the data loaded
+    setValueFromJson 'VDM_POWER_DATA' '.data' "${power}" || has_data=false
+    # always reset
+    clearPowerDataEnv
+    # check if we have the data already loaded
+    if $has_data; then
+      return 0
+    fi
+    # get the global config values if not set
+    setValueFromJson 'VDM_POWER_OWNER' '.owner' "${power}" || has_error=true
+    setValueFromJson 'VDM_POWER_REPO' '.repo' "${power}" || has_error=true
+    setValueFromJson 'VDM_POWER_BRANCH' '.branch' "${power}" || has_error=true
+    setValueFromJson 'VDM_POWER_API' '.api' "${power}" || has_error=true
+    setValueFromJson 'VDM_POWER_TOKEN' '.token' "${power}" || has_error=true
+    setValueFromJson 'VDM_POWER_CODE_URL' '.code' "${power}" || has_error=true
+    setValueFromJson 'VDM_POWER_SETTINGS_URL' '.settings' "${power}" || has_error=true
+    setValueFromJson 'VDM_POWER_NAMESPACE' '.namespace' "${power}" || has_error=true
+    setValueFromJson 'VDM_POWER_NAME' '.name' "${power}" || has_error=true
+    # check if we have some errors already
+    if $has_error; then
+      _echo "[error] We could not get ${VDM_POWER_PATH}->${VDM_POWER_NAME} details ${guid} because of missing config values."
+      # always clear memory
+      clearPowerDataEnv
+      return 11
+    fi
+    # replace any strings in namespace as needed
+    [ -n "${VDM_REPOSITORY_REPLACEMENT}" ] && VDM_POWER_NAMESPACE=$(strReplace "${VDM_POWER_NAMESPACE}")
+    # we must add these locally to avoid collusion
+    owner="${VDM_POWER_OWNER}"
+    repo="${VDM_POWER_REPO}"
+    branch="${VDM_POWER_BRANCH}"
+    api="${VDM_POWER_API}"
+    token="${VDM_POWER_TOKEN}"
+    code="${VDM_POWER_CODE_URL}"
+    settings="${VDM_POWER_SETTINGS_URL}"
+    namespace="${VDM_POWER_NAMESPACE}"
+    name="${VDM_POWER_NAME}"
+    use_name="${VDM_POWER_NAMESPACE}\\${VDM_POWER_NAME}"
+    # little information of progress
+    _echo "[info] Getting (${namespace}\\${name}) power (${guid}) details."
+    # we first load the settings data
+    if [[ "${branch}" == 'default' ]]; then
+      # get super power default branch
+      getGiteaApiBucket "raw/${settings}" "${owner}" "${repo}" "${api}" "${token}" || return 11
+    else
+      # get super power targeted branch
+      getGiteaApiBucket "raw/${settings}?ref=${branch}" "${owner}" "${repo}" "${api}" "${token}" || return 11
+    fi
+    # check that we got data
+    if [ -n "${VDM_API_BUCKET}" ]; then
+      addJsonValueToPower "${guid}" 'data' "${VDM_API_BUCKET}"
+      addValueToPower "${guid}" 'use_name' "${use_name}"
+    else
+      # always clear memory
+      clearPowerDataEnv
+      return 11
+    fi
+    # now we load the code
+    if [[ "${branch}" == 'default' ]]; then
+      # get super power default branch
+      getGiteaApiFile "raw/${code}" "${owner}" "${repo}" "${api}" "${token}" || return 11
+    else
+      # get super power targeted branch
+      getGiteaApiFile "raw/${code}?ref=${branch}" "${owner}" "${repo}" "${api}" "${token}" || return 11
+    fi
+    # check that we got data
+    if [ -n "${VDM_API_FILE_PATH}" ] && [ -f "${VDM_API_FILE_PATH}" ]; then
+      # add the name space
+      addNamespace "${namespace}"
+      # set class folder path
+      class_path="${VDM_PACKAGE_SRC_DIR}/${namespace//\\//}"
+      # make sure the directories exist
+      mkdir -p "${class_path}"
+      # move the class into place
+      mv -f "${VDM_API_FILE_PATH}" "${class_path}/${name}.php"
+      # replace any strings in code as needed
+      [ -n "${VDM_REPOSITORY_REPLACEMENT}" ] && fileReplaceStrings "${class_path}/${name}.php"
+    else
+      # always clear memory
+      clearPowerDataEnv
+      return 11
+    fi
+
+    # always clear memory
+    clearPowerDataEnv
+
+    return 0
+  }
+
+  # load the repositories where we can search for powers
+  function loadSuperpowerRepositories() {
+    # little information of progress
+    _echo "[info] Loading the Power Repositories..."
+    # check for errors
+    local has_error=false
+    local has_files=false
+    local tmp_api
+    local tmp_token
+    # load all the repositories
+    for repository in $(echo "${VDM_CONFIG_DATA}" | jq -c '.repositories[]'); do
+      # reset with each loop
+      has_error=false
+      # get the global config values if not set
+      setValueFromJson 'VDM_OWNER' '.owner' "${repository}" || has_error=true
+      setValueFromJson 'VDM_REPO' '.repo' "${repository}" || has_error=true
+      setValueFromJson 'VDM_BRANCH' '.branch' "${repository}" || VDM_BRANCH="default"
+      setValueFromJson 'VDM_API_NAME' '.api_name' "${repository}" || VDM_API_NAME="VDM_GLOBAL_API"
+      setValueFromJson 'VDM_TOKEN_NAME' '.token_name' "${repository}" || VDM_TOKEN_NAME="VDM_GLOBAL_TOKEN"
+      # set the package (api/toke)
+      tmp_api=${!VDM_API_NAME}
+      tmp_token=${!VDM_TOKEN_NAME}
+      # allow direct overriding (api/toke)
+      getConfigValue 'VDM_API' '.repository.api' false || VDM_API="${tmp_api}"
+      getConfigValue 'VDM_TOKEN' '.repository.token' false || VDM_TOKEN="${tmp_token}"
+      # check if we have some errors already
+      if $has_error; then
+        clearFileEnv
+        continue
+      fi
+      # make globally available
+      export VDM_BRANCH
+      export VDM_TOKEN
+      export VDM_API
+      # load the super power index
+      getSuperpowerIndex && has_files=true
     done
-    echo -e "$markdown_list"
-  fi
-}
-
-# get the classes linked to this dependency
-function getLinkedClassesMarkdown() {
-  local dependency="$1"
-  local subset
-  # Extract the subset for the given main_key
-  subset=$(echo "$VDM_LINKED_CLASSES" | jq --arg mk "$dependency" '.[$mk] // {}')
-  # Generate the markdown format
-  echo "$subset" | jq -r 'to_entries[] | "  - [\(.value)](src/\(.key).php)"'
-}
-
-# convert VDM_NAME to the desired header format
-function convertToHeader() {
-    local name="$1"
-    # Replace slashes with spaces
-    name="${name//\// }"
-    # Capitalize the first letter of each word
-    name=$(echo "$name" | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')
-    echo "$name"
-}
-
-# set the package README
-function setReadMe() {
-  # little information of progress
-  _echo "[info] Setting the README..."
-  # add the Project Name to Readme
-  {
-    header=$(convertToHeader "${VDM_NAME:-A Composer Package}")
-    echo -n "# $header"
-    # add the version
-    echo " (${VDM_PACKAGE_VERSION:-1.0.0})"
-    echo ""
-    # set the Description
-    reg="[[:space:]]+"
-    if [[ "${VDM_PACKAGE_DESCRIPTION}" =~ $reg ]]; then
-      echo "${VDM_PACKAGE_DESCRIPTION}"
-    else
-      [ -n "${!VDM_PACKAGE_DESCRIPTION}" ] && echo "${!VDM_PACKAGE_DESCRIPTION}" || echo "${VDM_PACKAGE_DESCRIPTION}"
-    fi
-    echo ""
-    echo "## Details"
-    echo ""
-    echo "- Packager: [${VDM_PACKAGER}](${VDM_PACKAGER_URL})"
-    echo "- Author: [${VDM_AUTHOR:-$PROGRAM_NAME}](${VDM_AUTHOR_URL:-$PROGRAM_URL})"
-    echo "- Creation Date: ${CREATION_DATE}"
-    echo ""
-    echo "### Installation via Composer"
-    echo ""
-    echo "Setup this registry in your \`~/.composer/config.json\` file:"
-    echo "\`\`\`"
-    echo "{"
-    echo "	\"repositories\": [{"
-    echo "			\"type\": \"composer\","
-    echo "			\"url\": \"https://${VDM_REPOSITORY_URL}/api/packages/${VDM_REPOSITORY_OWNER}/composer\""
-    echo "		}"
-    echo "	]"
-    echo "}"
-    echo "\`\`\`"
-    echo ""
-    echo "To install the package using Composer, run the following command:"
-    echo "\`\`\`"
-    echo "composer require ${VDM_NAME:-error}:${VDM_PACKAGE_VERSION:-1.0.0}"
-    echo "\`\`\`"
-    getJoomlaFramework
-    getJoomlaDependencies
-    echo ""
-    echo "### License"
-    echo "> ${VDM_LICENSE:-none}"
-    echo ""
-  } >"${VDM_README_MD}"
-}
-
-# set the license file
-function setLicenseFile() {
-  local has_error=false
-  # check if the license file is passed via a URL
-  if [[ "${VDM_LICENSE_FILE}" =~ ^"http:" ]] || [[ "${VDM_LICENSE_FILE}" =~ ^"https:" ]]; then
-    # shellcheck disable=SC2143
-    if [[ $(wget -S --spider "${VDM_LICENSE_FILE}" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
-      wget --quiet "${VDM_LICENSE_FILE}" -O "${VDM_LICENSE_FILE_PATH}"
-      VDM_LICENSE_FILE="LICENSE"
-    else
-      echo >&2 "[error] The license:${VDM_LICENSE_FILE} is not a valid URL."
-      has_error=true
-    fi
-  elif [ -f "${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE}" ]; then
-    # now copy the license file
-    cp "${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE}" "${VDM_LICENSE_FILE_PATH}"
-  else
-    echo >&2 "[error] The license:${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE} not found."
-    has_error=true
-  fi
-  # check if we have some errors
-  if $has_error; then
-    return 16
-  fi
-  # little information of progress
-  _echo "[info] Setting the License File..."
-  return 0
-}
-
-# get the package repository
-function setRepository() {
-  # change to git directory
-  cd "${VDM_PACKAGE_GIT_DIR}" || return 22
-  # check if the repository exist on our gitea instance
-  local update_repo
-  # shellcheck disable=SC2015
-  if git ls-remote "ssh://git@${VDM_REPOSITORY_URL}/${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.git" -q >/dev/null 2>&1; then
-    getExistingRepository || return 23
-    update_repo=true
-  else
-    setNewRepository || return 24
-    update_repo=false
-  fi
-  # make sure we are in the correct dir and then remove all existing data
-  cd "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" || return 25
-  # remove any existing files and folders from repository
-  rm -rf -- * || return 26
-  # move all new files into repository
-  setRepositoryNewFiles || return 27
-  # make sure we are in the correct dir and then remove all existing data
-  cd "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" || return 25
-  # check if we have changes
-  if $update_repo && [[ -z $(git status --porcelain) ]]; then
-    _echo "[info] No changes found in (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
-  else
-    # check if we must update or create repository
-    if $update_repo; then
-      # make API call
-      getGiteaApiBucket "tags" "${VDM_REPOSITORY_OWNER}" "${VDM_REPOSITORY_REPO}" "${VDM_PACKAGE_API}" "${VDM_PACKAGE_TOKEN}" || return 28
-      # check if tag exists
-      VDM_TAG_EXIST=$(echo "${VDM_API_BUCKET}" | jq -r --arg TAG "${VDM_PACKAGE_VERSION:-1.0.0}" 'any(.[]; .name == $TAG)')
-      # set update message
-      if $VDM_TAG_EXIST; then
-        message="Update - ${VDM_PACKAGE_VERSION:-1.0.0}"
-      else
-        message="Update"
-      fi
-      # add user details
-      setUserDetails
-      # get the repository last tag
-      makeGitCommit "${message}" "${VDM_PACKAGE_VERSION:-1.0.0}" "$VDM_TAG_EXIST" || return 28
-      # give little notice of progress
-      _echo "[info] Pushing changes to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
-      # make a normal push update
-      git push >/dev/null 2>&1 || return 30
-      if ! $VDM_TAG_EXIST; then
-        git push --tags >/dev/null 2>&1 || return 30
-      fi
-    else
-      # create new repo
-      setGitRepository || return 29
-      # give little notice of progress
-      _echo "[info] Pushing (TO CREATE) changes to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
-      # push to creat the repository (if allowed)
-      if [[ "${VDM_REPOSITORY_BRANCH}" == 'default' ]]; then
-        git push -u origin master >/dev/null 2>&1 || return 30
-      else
-        git push -u origin "${VDM_REPOSITORY_BRANCH:-master}" >/dev/null 2>&1 || return 30
-      fi
-      git push --tags >/dev/null 2>&1 || return 30
-    fi
-  fi
-  # success
-  return 0
-}
-
-# get the existing repository
-function getExistingRepository() {
-  # little information of progress
-  _echo "[info] Getting (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
-  if [[ "${VDM_REPOSITORY_BRANCH}" == 'default' ]]; then
-    # clone the existing repository
-    git clone "ssh://git@${VDM_REPOSITORY_URL}/${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.git" >/dev/null 2>&1 || return 23
-  else
-    # clone the existing repository
-    git clone -b "${VDM_REPOSITORY_BRANCH:-master}" "ssh://git@${VDM_REPOSITORY_URL}/${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.git" >/dev/null 2>&1 || return 23
-  fi
-  # success
-  return 0
-}
-
-# set the new repository
-function setNewRepository() {
-  # little information of progress
-  _echo "[info] Creating (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) folder"
-  # check if the repository exist on our gitea instance
-  mkdir -p "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" || return 24
-  # success
-  return 0
-}
-
-# set new git repository
-function setGitRepository() {
-  # little information of progress
-  _echo "[info] Initializing the (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
-  # initialize the repository
-  git init >/dev/null 2>&1 || return 29
-  # add user details
-  setUserDetails
-  # add the first commit
-  makeGitCommit "First Commit - ${VDM_PACKAGE_VERSION:-1.0.0}" "${VDM_PACKAGE_VERSION:-1.0.0}" >/dev/null 2>&1 || return 28
-  # little information of progress
-  _echo "[info] Adding remote branch to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
-  # add the remote branch
-  git remote add origin "ssh://git@${VDM_REPOSITORY_URL}/${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.git" >/dev/null 2>&1 || return 29
-  # Check if a specific branch is set and it is not 'default'
-  if [ "${VDM_REPOSITORY_BRANCH}" != "default" ]; then
-    _echo "[info] Setting branch to ${VDM_REPOSITORY_BRANCH}"
-    git checkout -b "${VDM_REPOSITORY_BRANCH:-master}" >/dev/null 2>&1 || return 29
-  fi
-  #success
-  return 0
-}
-
-# Set Git user details based on environment variables
-function setUserDetails () {
-  # Set Git author name
-  if [ -n "${GIT_AUTHOR_NAME+x}" ]; then
-    git config user.name "${GIT_AUTHOR_NAME}"
-    _echo "[info] Git author name set to: ${GIT_AUTHOR_NAME}"
-  fi
-
-  # Set Git author email
-  if [ -n "${GIT_AUTHOR_EMAIL+x}" ]; then
-    git config user.email "${GIT_AUTHOR_EMAIL}"
-    _echo "[info] Git author email set to: ${GIT_AUTHOR_EMAIL}"
-  fi
-
-  # Set signing key
-  if [ -n "${GIT_SIGNING_KEY+x}" ]; then
-    git config user.signingKey "${GIT_SIGNING_KEY}"
-    _echo "[info] Git signing key set to: ${GIT_SIGNING_KEY}"
-  fi
-
-  # Set Git GPG sign
-  if [ -n "${GIT_GPG_SIGN+x}" ]; then
-    git config commit.gpgsign "${GIT_GPG_SIGN}"
-    _echo "[info] Git GPG sign set to: ${GIT_GPG_SIGN}"
-  fi
-
-  # Set Git SSH key path
-  if [ -n "${GIT_SSH_KEY_PATH+x}" ]; then
-    git config core.sshCommand "ssh -i ${GIT_SSH_KEY_PATH}"
-    _echo "[info] Git SSH key path set to: ${GIT_SSH_KEY_PATH}"
-  fi
-}
-
-# make the git commit
-function makeGitCommit() {
-  # add all (or remove)
-  git add . >/dev/null 2>&1 || return 28
-  # little information of progress
-  _echo "[info] Committing (${1}) to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
-  # set the commit message
-  git commit -am"${1}" >/dev/null 2>&1 || return 28
-  # check if the tag should be added
-  if "${3:-false}"; then
-    # little information of progress
-    _echo "[info] TAG (${2}) in (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) already exists"
-  else
-    # little information of progress
-    _echo "[info] Adding TAG (${2}) to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
-    # add the new tag
-    git tag "${2}" >/dev/null 2>&1 || return 28
-  fi
-  # success
-  return 0
-}
-
-# add all the new files to the repository
-function setRepositoryNewFiles() {
-  # little information of progress
-  _echo "[info] Moving new files into the (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) directory"
-  _echo "[info] Removing the ${VDM_PACKAGE_DIR:?} directory"
-  # move all the new files
-  if [ -d "${VDM_PACKAGE_DIR}" ]; then
-    mv "${VDM_PACKAGE_DIR:?}/"* "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" >/dev/null 2>&1 &&
-      rm -rf "${VDM_PACKAGE_DIR:?}" >/dev/null 2>&1 ||
-      return 27
-  else
-    return 27
-  fi
-  # success
-  return 0
-}
-
-# set a composer package
-function setComposerPackage() {
-  # remove the git directory
-  rm -fr "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}/.git" || return 31
-  # zip the package
-  _zip "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" "${VDM_PACKAGE_ZIP_FILE}"|| return 31
-  # now push out the package
-  pushComposerPackage || return 31
-}
-
-# Push a composer package out
-function pushComposerPackage() {
-  local package_version="${VDM_PACKAGE_VERSION:-1.0.0}"
-  local upload_url="https://${VDM_REPOSITORY_URL}/api/packages/${VDM_REPOSITORY_OWNER}/composer?version=${package_version}"
-
-  # Upload the package if the version does not exist
-  response_code=$(curl --write-out "%{http_code}" --silent --output /dev/null \
-    --user "${GIT_AUTHOR_NAME}:${VDM_REPOSITORY_TOKEN}" \
-    --upload-file "${VDM_PACKAGE_ZIP_FILE}" \
-    "${upload_url}")
-
-  if [[ "$response_code" -ne 201 ]]; then
-    echo >&2 "[warning] Pushing the composer package failed with response code:${response_code}"
-    _echo "[info] Composer package (${VDM_REPOSITORY_REPO}) version:${package_version} might already exists. Please check!"
-    _echo "[info] You can not push the same package version a second time, you must delete it, or choose a new version."
+    # check if we found a file
+    $has_files || return 13
+    # set the data in a file
+    echo "${VDM_SUPERPOWERS}" > "$VDM_SUPERPOWERS_FILE"
+    unset VDM_SUPERPOWERS
+    # success
     return 0
-  fi
+  }
 
-  _echo "[info] Composer package (${VDM_REPOSITORY_REPO}) version:${package_version} uploaded successfully."
-  return 0
-}
-
-# gives us a unique file name for any url
-function getUniqueFileName() {
-  local url="$1"
-  local hash
-  hash=$(echo "$url" | sha256sum | awk '{print $1}')
-  echo "${hash:0:10}"
-}
-
-# give the echo messages
-# only if not set to be quiet
-function _echo() {
-  if (("$QUIET" == 0)); then
-    echo "$1"
-  fi
-}
-
-# Zip the content of a path
-function _zip() {
-    local folder_path="${1}"
-    local zip_path="${2}"
-    if [[ ! -d $folder_path ]]; then
-        echo >&2 "[error] Directory $folder_path does not exist."
-        return 1
+  # get the superpower index values
+  function getSuperpowerIndex() {
+    # little information of progress
+    _echo "[info] Getting (${VDM_OWNER}/${VDM_REPO}) power index"
+    if [[ "${VDM_BRANCH}" == 'default' ]]; then
+      # get super power default branch
+      getGiteaApiBucket "raw/super-powers.json" "${VDM_OWNER}" "${VDM_REPO}" "${VDM_API}" "${VDM_TOKEN}" || return 11
+    else
+      # get super power targeted branch
+      getGiteaApiBucket "raw/super-powers.json?ref=${VDM_BRANCH}" "${VDM_OWNER}" "${VDM_REPO}" "${VDM_API}" "${VDM_TOKEN}" || return 11
     fi
-    # Ensure the folder path does not end with a slash
-    folder_path=${folder_path%/}
-    # Navigate to the folder
-    cd "$folder_path" || { echo >&2 "[error] Unable to navigate to $folder_path."; return 1; }
-    # Create the zip file containing the contents of the folder
-    if cat < <(zip -r "${zip_path}" ./* ) >/dev/null 2>&1; then
-      _echo "[info] Successfully zipped the package (${zip_path})"
+    # check that we got data
+    if [ -n "${VDM_API_BUCKET}" ]; then
+      setSuperpowerIndex || return 11
+    else
+      return 11
+    fi
+
+    return 0
+  }
+
+  # store/set the super power index
+  function setSuperpowerIndex() {
+    local new_entry
+
+    # Create a JSON object from the global variables
+    new_entry=$(jq -n \
+      --arg owner "$VDM_OWNER" \
+      --arg repo "$VDM_REPO" \
+      --arg branch "$VDM_BRANCH" \
+      --arg api "$VDM_API" \
+      --arg token "$VDM_TOKEN" \
+      --argjson powers "$VDM_API_BUCKET" \
+      '{
+        owner: $owner,
+        repo: $repo,
+        branch: $branch,
+        api: $api,
+        token: $token,
+        powers: $powers
+      }')
+
+    # Append the new entry to the VDM_SUPERPOWERS array
+    VDM_SUPERPOWERS=$(echo "$VDM_SUPERPOWERS" | jq --argjson new_entry "$new_entry" '. += [$new_entry]')
+
+    # rest all power env (since we have it in our global VDM_SUPERPOWERS now)
+    clearPowerEnv
+  }
+
+  # Function to validate a GUID
+  function validateGuid() {
+    local guid=$1
+    # Define the regex pattern for GUID
+    local regex='^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$'
+    if [[ $guid =~ $regex ]]; then
       return 0
     fi
     return 1
-}
+  }
 
-# Perform string replacements (VDM_REPOSITORY_REPLACEMENT)
-function strReplace() {
-    local content="$1"
-    local result="$content"
-    local pairs
-    local pair_decoded
-    local key
-    local value
-
-    # Extract keys and values and perform replacements
-    pairs=$(echo "$VDM_REPOSITORY_REPLACEMENT" | jq -r 'to_entries | .[] | @base64')
-
-    # Loop over the pairs without creating a subshell
-    while IFS= read -r pair; do
-        # Decode from base64
-        pair_decoded=$(echo "$pair" | base64 --decode)
-        key=$(echo "$pair_decoded" | jq -r .key)
-        value=$(echo "$pair_decoded" | jq -r .value)
-
-        # Perform replacements in the string
-        # shellcheck disable=SC2001
-        result=$(echo "$result" | sed "s|${key//\\/\\\\}|${value//\\/\\\\}|g")
-    done <<< "$pairs"  # Redirect the variable into the loop to avoid subshells
-
-    echo "$result"
-}
-
-# Replace strings in a file directly (VDM_REPOSITORY_REPLACEMENT)
-function fileReplaceStrings() {
-    local file_path="$1"
-
-    # Check if the file exists
-    if [[ ! -f "$file_path" ]]; then
-        echo "File does not exist: $file_path"
-        return 1
-    fi
-
-    # Extract keys and values and perform replacements
-    echo "$VDM_REPOSITORY_REPLACEMENT" | jq -r 'to_entries | .[] | @base64' |
-    while IFS= read -r pair; do
-        # Decode from base64
-        pair_decoded=$(echo "$pair" | base64 --decode)
-        key=$(echo "$pair_decoded" | jq -r .key)
-        value=$(echo "$pair_decoded" | jq -r .value)
-
-        # Perform replacements in the file using unescaped values
-        sed -i "s|${key//\\/\\\\}|${value//\\/\\\\}|g" "$file_path"
+  # Function to manage the namespaces
+  function addNamespace() {
+    local namespace="$1"
+    local extracted_namespace
+    # Extract the first two segments of the namespace
+    # shellcheck disable=SC1003
+    extracted_namespace=$(echo "$namespace" | awk -F'\\' '{print $1 "\\" $2}')
+    # Check if the extracted namespace already exists in the array
+    for ns in "${VDM_TARGET_NAMESPACE[@]}"; do
+      if [ "$ns" == "$extracted_namespace" ]; then
+        return
+      fi
     done
-}
+    # Add the extracted namespace to the array if it doesn't exist
+    VDM_TARGET_NAMESPACE+=("$extracted_namespace")
+  }
 
-# uninstalls the octopc program.
-function runUninstall() {
-  # now remove the script
-  if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
-    sudo rm -f "/usr/local/bin/${PROGRAM_CODE}"
-    echo "[info] ${PROGRAM_NAME} v${PROGRAM_VERSION} has been completely uninstalled."
-  else
-    echo "[info] ${PROGRAM_NAME} v${PROGRAM_VERSION} is not installed."
-  fi
-}
+  # extract Joomla use statements
+  function extractJoomlaUseStatements() {
+    local header_string="$1"
+    local use_name="$2"
+    # Check if the header string is empty
+    if [[ -z "$header_string" ]]; then
+      return
+    fi
+    # Loop through each line in the header string
+    while IFS= read -r line; do
+      # Check if the line contains a Joomla use statement
+      if [[ "$line" =~ ^use\ Joomla ]]; then
+        # Extract the namespace part (remove 'use ' and ';')
+        namespace=$(echo "$line" | sed -E 's/use ([^ ]+)( as [^;]*)?;/\1/')
+        # Trim leading and trailing spaces
+        namespace=$(echo "$namespace" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [[ ! $namespace =~ Joomla\\CMS\\ ]]; then
+          local extracted_namespace
+          # shellcheck disable=SC1003
+          extracted_namespace=$(echo "$namespace" | awk -F'\\' '{print $1 "\\" $2}')
+          JOOMLA_FRAMEWORK["$extracted_namespace"]=1
+          setLinkedDependencyClasses "${extracted_namespace}" "${use_name//\\//}" "${use_name}"
+        else
+          # Add the namespace to the associative array
+          JOOMLA_NAMESPACES["$namespace"]=1
+          setLinkedDependencyClasses "${namespace}" "${use_name//\\//}" "${use_name}"
+        fi
+      fi
+    done <<< "$header_string"
+  }
 
-# check if we have project overrides for the environment variables
-function getProjectEnvironment() {
-  # load the config data
-  VDM_CONFIG_DATA=$(cat "$VDM_PACKAGE_CONF_FILE")
-  # make sure we have package details
-  if [[ "${VDM_CONFIG_DATA}" =~ '"package"' ]] && [[ "${VDM_CONFIG_DATA}" =~ '"powers"' ]]; then
-    # little information of progress
-    _echo "[info] Loading the environment variables..."
-    # make configuration globally available
-    export VDM_CONFIG_DATA
-    # get package code_name
-    getConfigValue 'VDM_CODE_NAME' '.package.code_name'
-    # the tmp path to the env of this project
-    tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.${VDM_CODE_NAME}"
-    # shellcheck disable=SC1090
-    [ -f "${tmp_path}" ] && source "${tmp_path}"
-    # clear this tmp out
-    unset tmp_path
+  # set the linked classes to the dependencies
+  function setLinkedDependencyClasses() {
+    local main_key="$1"
+    local sub_key="$2"
+    local value="$3"
+
+    # Use jq to update the JSON structure
+    VDM_LINKED_CLASSES=$(echo "$VDM_LINKED_CLASSES" | jq --arg mk "$main_key" --arg sk "$sub_key" --arg val "$value" '
+      .[$mk][$sk] = $val
+    ')
+  }
+
+  # just to clear all file ENVs
+  function clearPowerEnv() {
+    # SET IN: loadPowerRepositories
+    unset VDM_OWNER
+    unset VDM_REPO
+    unset VDM_BRANCH
+    unset VDM_TOKEN_NAME
+    unset VDM_TOKEN
+    unset VDM_API_NAME
+    unset VDM_API
+  }
+
+  # just to clear all file ENVs
+  function clearPowerDataEnv() {
+    # SET IN: setPowerData
+    unset VDM_POWER_DATA
+    unset VDM_POWER_OWNER
+    unset VDM_POWER_REPO
+    unset VDM_POWER_BRANCH
+    unset VDM_POWER_API
+    unset VDM_POWER_TOKEN
+    unset VDM_POWER_CODE_URL
+    unset VDM_POWER_SETTINGS_URL
+    unset VDM_POWER_PATH
+    unset VDM_POWER_NAME
+  }
+
+  # just to clear all file ENVs
+  function clearPowerChildrenEnv() {
+    # SET IN: loadChildrenPowers
+    unset VDM_POWER_CHILDREN
+    unset VDM_POWER_DATA
+    unset VDM_POWER_EXTENDS
+    unset VDM_POWER_IMPLEMENTS
+    unset VDM_POWER_LOAD_SELECTION
+    unset VDM_POWER_USE_SELECTION
+    unset VDM_POWER_HEAD
+    unset VDM_POWER_USE_NAME
+    unset VDM_POWER_COMPOSER
+  }
+
+  # clear the main environment variables
+  function clearMainEnv() {
+    # just to be sure
+    clearPowerEnv
+    clearPowerDataEnv
+    clearPowerChildrenEnv
+    # clear all exported package details
+    # SET IN: getRepositoryDetails
+    unset VDM_REPOSITORY_OWNER
+    unset VDM_REPOSITORY_REPO
+    unset VDM_REPOSITORY_BRANCH
+    unset VDM_REPOSITORY_TOKEN_NAME
+    unset VDM_REPOSITORY_URL_NAME
+    unset VDM_REPOSITORY_API_NAME
+    unset VDM_REPOSITORY_TOKEN
+    unset VDM_REPOSITORY_URL
+    unset VDM_REPOSITORY_API
+    # SET IN: setPackageDir
+    unset VDM_PACKAGE_DIR
+    unset VDM_PACKAGE_GIT_DIR
+    unset VDM_PACKAGE_SRC_DIR
+    unset VDM_PACKAGE_ZIP_FILE
+    unset VDM_PACKAGE_LICENSE_FILE_PATH
+    unset VDM_PACKAGE_COMPOSER_FILE
+    unset VDM_README_MD
+    # SET IN: getPackageDetails
+    unset VDM_CONFIG_DATA
+    unset VDM_PACKAGER
+    unset VDM_PACKAGER_URL
+    unset VDM_GLOBAL_TOKEN
+    unset VDM_GLOBAL_API
+    unset VDM_GLOBAL_URL
+    unset VDM_NAME
+    unset VDM_CODE_NAME
+    unset VDM_PACKAGE_TYPE
+    unset VDM_PACKAGE_DESCRIPTION
+    unset VDM_PACKAGE_HOMEPAGE
+    unset VDM_PACKAGE_KEYWORDS
+    unset VDM_PACKAGE_PHP
+    unset VDM_PACKAGE_JOOMLA_FRAMEWORK
+    unset VDM_PACKAGE_VERSION
+    unset VDM_LICENSE
+    unset VDM_LICENSE_FILE
+    unset VDM_LICENSE_FILE_PATH
+    unset VDM_AUTHOR
+    unset VDM_AUTHOR_EMAIL
+    unset VDM_AUTHOR_URL
+    unset VDM_AUTHOR_ROLE
+    # SET IN: getGiteaApiBucket
+    unset VDM_API_BUCKET
+    # SET IN: getGiteaApiFile
+    if [ -n "${VDM_API_FILE_PATH}" ] && [ -f "${VDM_API_FILE_PATH}" ]; then
+      rm -f "${VDM_API_FILE_PATH}"
+    fi
+    unset VDM_API_FILE_PATH
+    # SET IN: Global
+    unset VDM_TARGET_NAMESPACE
+    # clear the temp files
+    rm -f "$VDM_SUPERPOWERS_FILE"
+  }
+
+  # clear all this projects files
+  function clearFiles() {
+    # always remove files
+    rm -fr "${VDM_PACKAGE_DIR:?}"
+    rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_REPOSITORY_REPO:?}"
+    rm -fr "${VDM_PACKAGE_ZIP_FILE:?}"
+  }
+
+  # get value from config
+  function getConfigValue() {
+    # with config values we only try to load it
+    # if it is not already set
+    # so if we find that it is set
+    # we're done search
+    [ -n "${!1}" ] && return 0
+    # get what we can from the config if not already set in the .env file
+    # so to set the value globally use the .env option
+    # to set per project use the config file of the project
+    setValueFromJson "$1" "$2" "$VDM_CONFIG_DATA" || {
+      # give little heads-up if not blocked
+      "${3:-true}" && echo >&2 "[error] We require ($2) for $PROGRAM_NAME v${PROGRAM_V} to work, but it's not found in $VDM_PACKAGE_CONF_FILE."
+      # we had no success
+      return 19
+    }
     # success
     return 0
-  else
-    # failed
-    return 17
-  fi
-}
+  }
 
-# updates the octopc program to the latest version.
-function runUpdate() {
-  # remove the current version
-  if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
-    # just backup in case of failure
-    sudo mv "/usr/local/bin/${PROGRAM_CODE}" "/usr/local/bin/${PROGRAM_CODE}.bak"
-  fi
-  # pull the latest version. Master is always the latest
-  if sudo curl --fail -L "https://git.vdm.dev/api/v1/repos/octoleo/${PROGRAM_CODE}/raw/src/${PROGRAM_CODE}?ref=${branch:-master}" -o "/usr/local/bin/${PROGRAM_CODE}" 2>/dev/null; then
-    # give success message
-    echo "[success] Update was successful."
-    # do we have a backup
-    if [ -f "/usr/local/bin/${PROGRAM_CODE}.bak" ]; then
-      # lets remove it now
-      sudo rm -f "/usr/local/bin/${PROGRAM_CODE}.bak"
-    fi
-  else
-    # show the error
-    echo >&2 "[error] Update failed! Please try again later."
-    # do we have a backup
-    if [ -f "/usr/local/bin/${PROGRAM_CODE}.bak" ]; then
-      # move backup back
-      sudo mv "/usr/local/bin/${PROGRAM_CODE}.bak" "/usr/local/bin/${PROGRAM_CODE}"
-    fi
-  fi
-  # always set the permission again if we have a file
-  if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
-    # the we make sure its executable
-    sudo chmod +x "/usr/local/bin/${PROGRAM_CODE}"
-  fi
-  # always exit so the new script can load
-  exit 0
-}
+  # Set value from JSON
+  function setValueFromJson() {
+      local target_var="$1"
+      local value
+      # Capture the value and the return status from getValueFromJson
+      value=$(getValueFromJson "$2" "$3")
+      local status=$?
+      # Check the status and return 19 if getValueFromJson failed
+      if [[ $status -ne 0 ]]; then
+          return 19
+      fi
+      # Safely use declare to dynamically set the value and make it global
+      declare -g "$target_var"="$value"
+  }
 
-# help message ʕ•ᴥ•ʔ
-function show_help() {
-  cat <<EOF
-Usage: ${PROGRAM_CODE} [OPTION...]
-	Options
-	======================================================
-   -p | --packager=<packager Name>
-	Packager name
-	example: ${PROGRAM_CODE} -p="Vast Development Method"
-	======================================================
-   -pu | --packager-url=<//packager.url>
-	Packager url
-	example: ${PROGRAM_CODE} -pu="https://git.vdm.dev/"
-	======================================================
-   -md | --main-dir=<path>
-	load the main working directory
-	example: ${PROGRAM_CODE} --main-dir=/src
-	======================================================
-   -e | --env=<file>
-	load the environment variables file
-	example: ${PROGRAM_CODE} --env=/src/.env
-	======================================================
-   --conf | --config=<path/url>
-	load the configuration for the package in json format
-	   file-example: src/example.json
-	example: ${PROGRAM_CODE} --config=config.json
-	======================================================
-   -ld | --licence-dir=<path>
-	load the licence directory
-	example: ${PROGRAM_CODE} --licence-dir=/src/licence
-	======================================================
-   -t | --token=<access_token>
-	load the global token
-	example: ${PROGRAM_CODE} --token=xxxxxxxxxxxxxxxxxxxxxxxxx
-	======================================================
-   -u | --url=<gitea>
-	Global url of the Gitea instance
-	example: ${PROGRAM_CODE} --url="git.vdm.dev"
-	======================================================
-   -a | --api=<//gitea.api>
-	Global api of the Gitea instance
-	example: ${PROGRAM_CODE} --api="https://git.vdm.dev/api/v1"
-	======================================================
-   -q | --quiet
-	mute all output messages
-	example: ${PROGRAM_CODE} --quiet
-	======================================================
-   --update
-	to update your install
-	example: ${PROGRAM_CODE} --update
-	======================================================
-   --uninstall
-	to uninstall this script
-	example: ${PROGRAM_CODE} --uninstall
-	======================================================
-   -h|--help
-	display this help menu
-	example: ${PROGRAM_CODE} -h
-	example: ${PROGRAM_CODE} --help
-	======================================================
-			${PROGRAM_NAME} v${PROGRAM_VERSION}
-	======================================================
-EOF
-}
+  # Get value from JSON
+  function getValueFromJson() {
+      local json_key="$1"
+      local json_data="$2"
+      local value
+      # Check if the necessary parameters are provided
+      if [[ -z "$json_key" ]]; then
+          # [error] Missing required key parameter.
+          return 19
+      fi
+      if [[ -z "$json_data" ]]; then
+          # [error] JSON data is empty.
+          return 19
+      fi
+      # Attempt to extract the value using jq
+      if ! value=$(echo "$json_data" | jq -r "$json_key"); then
+          # [error] Failed to parse JSON data.
+          return 19
+      fi
+      # Check if the value is 'null' or empty
+      if [[ "$value" == "null" || -z "$value" ]]; then
+          # [error] Key not found or null value.
+          return 19
+      fi
+      # Safely return the value
+      echo "$value"
+  }
 
-# SET THE DEFAULTS #####################################
-# get start time
-# shellcheck disable=SC2034
-START_BUILD=$(date +"%s")
-# use UTC+00:00 time also called zulu
-# shellcheck disable=SC2034
-START_DATE=$(TZ=":ZULU" date +"%m/%d/%Y @ %R (UTC)")
-CREATION_DATE=$(TZ=":ZULU" date +"%B %Y")
+  # make API call
+  function getGiteaApiBucket() {
+    # the locals
+    local mode="${1}"
+    local owner="${2}"
+    local repo="${3}"
+    local api="${4}"
+    local token="${5}"
+    local json_data
+    local message
+    # each time reset
+    unset VDM_API_BUCKET
+    # give message
+    _echo "[info] Getting ${mode} information from ${owner}/${repo} repository."
+    # get the json data
+    json_data=$(curl -s -H "Authorization: token ${token}" -H 'accept: application/json' -X 'GET' "${api}/repos/${owner}/${repo}/${mode}")
+    # check for error
+    if [[ "${json_data}" =~ '"errors"' ]] && [[ "${json_data}" =~ '"message"' ]]; then
+      # get the message
+      message=$(echo "${json_data}" | jq -r ".message")
+      # check that we have tags (not ideal, but to catch wrong repo path)
+      _echo "[error] failed to get ${mode} from ${owner}/${repo} repository [${message}]."
+      # we an add more later
+      return 12
+    elif [ "${json_data}" = '[]' ]; then
+      # check that we have tags (not ideal, but to catch wrong repo path)
+      _echo "[error] failed to get ${mode} from ${owner}/${repo} repository."
+      # we an add more later
+      return 12
+    fi
+    # get the latest
+    VDM_API_BUCKET="${json_data}"
+    # success
+    export VDM_API_BUCKET
+    # success
+    return 0
+  }
 
-# the quiet switch
-QUIET="${QUIET:-0}"
+  # make API call
+  function getGiteaApiFile() {
+    # the locals
+    local mode="${1}"
+    local owner="${2}"
+    local repo="${3}"
+    local api="${4}"
+    local token="${5}"
+    local tmp_file
+    local message
 
-# we set the packager directories
-tmp_path="/home/$USER/${PROGRAM_CODE}"
-# ALWAYS USE GLOBAL IF SET
-VDM_MAIN_DIR="${VDM_MAIN_DIR:-$tmp_path}"
+    # each time reset
+    unset VDM_API_FILE_PATH
 
-# we set the licenses directory
-tmp_path="${VDM_MAIN_DIR}/licenses"
-[ -d "$tmp_path" ] || tmp_path="/home/$USER/${PROGRAM_CODE}/licenses"
-# if path not set try $PWD path
-[ -d "$tmp_path" ] || tmp_path="$PWD"
-# ALWAYS USE GLOBAL IF SET
-VDM_LICENSE_DIR="${VDM_LICENSE_DIR:-$tmp_path}"
+    # give message
+    _echo "[info] Getting ${mode} information from ${owner}/${repo} repository."
 
-# the environment file variables path
-tmp_path="$PWD/.env_${PROGRAM_CODE}"
-# if file not set try $PWD path
-[ -f "$tmp_path" ] || tmp_path="$VDM_MAIN_DIR/.env_${PROGRAM_CODE}"
-# if file not set try $VDM_MAIN_DIR path
-[ -f "$tmp_path" ] || tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.env"
-# ALWAYS USE GLOBAL IF SET
-VDM_ENV_FILE_PATH="${VDM_ENV_FILE_PATH:-$tmp_path}"
+    # create a temporary file
+    tmp_file=$(mktemp)
 
-# clear this tmp out
-unset tmp_path
+    # get the json data and store in tmp file
+    curl -s -H "Authorization: token ${token}" -H 'accept: application/json' -X 'GET' "${api}/repos/${owner}/${repo}/${mode}" -o "${tmp_file}"
 
-# check if we have options
-while :; do
-  case $1 in
-  -h | --help)
-    show_help # Display a usage synopsis.
-    exit
-    ;;
-  -q | --quiet)
-    QUIET=1
-    ;;
-  --uninstall)
-    runUninstall
-    shift
-    ;;
-  --update)
-    runUpdate
-    shift
-    ;;
-  -md=* | --main-dir=*)
-    VDM_MAIN_DIR=${1#*=}
-    if [ -z "$VDM_MAIN_DIR" ]; then
-      echo '[error] "--main-dir" requires a non-empty option argument.'
-      exit 17
+    # check for error
+    if grep -q '"errors"' "${tmp_file}" && grep -q '"message"' "${tmp_file}"; then
+      # get the message
+      message=$(jq -r ".message" < "${tmp_file}")
+      # give error message
+      _echo "[error] failed to get ${mode} from ${owner}/${repo} repository [${message}]."
+      # remove tmp file
+      rm -f "${tmp_file}"
+      # return error code
+      return 12
+    elif [ "$(cat "${tmp_file}")" = '[]' ]; then
+      # check for empty array response
+      _echo "[error] failed to get ${mode} from ${owner}/${repo} repository."
+      # remove tmp file
+      rm -f "${tmp_file}"
+      # return error code
+      return 12
     fi
-    ;;
-  -e=* | --env=*)
-    VDM_ENV_FILE_PATH=${1#*=}
-    if [ -z "$VDM_ENV_FILE_PATH" ]; then
-      echo '[error] "--env" requires a non-empty option argument.'
-      exit 17
-    fi
-    ;;
-  --conf=* | --config=*)
-    VDM_PACKAGE_CONF_FILE=${1#*=}
-    if [ -z "$VDM_PACKAGE_CONF_FILE" ]; then
-      echo '[error] "--conf" requires a non-empty option argument.'
-      exit 17
-    fi
-    ;;
-  -ld=* | --licence-dir=*)
-    VDM_LICENSE_DIR=${1#*=}
-    if [ -z "$VDM_LICENSE_DIR" ]; then
-      echo '[error] "--licence-dir" requires a non-empty option argument.'
-      exit 17
-    fi
-    ;;
-  -p=* | --packager=*)
-    VDM_PACKAGER=${1#*=}
-    if [ -z "$VDM_PACKAGER" ]; then
-      echo '[error] "--packager" requires a non-empty option argument.'
-      exit 17
-    fi
-    ;;
-  -pu=* | --packager-url=*)
-    VDM_PACKAGER_URL=${1#*=}
-    if [ -z "$VDM_PACKAGER_URL" ]; then
-      echo '[error] "--packager-url" requires a non-empty option argument.'
-      exit 17
-    fi
-    ;;
-  -t=* | --token=*)
-    VDM_GLOBAL_TOKEN=${1#*=}
-    if [ -z "$VDM_GLOBAL_TOKEN" ]; then
-      echo '[error] "--token" requires a non-empty option argument.'
-      exit 17
-    fi
-    ;;
-  -a=* | --api=*)
-    VDM_GLOBAL_API=${1#*=}
-    if [ -z "$VDM_GLOBAL_API" ]; then
-      echo '[error] "--api" requires a non-empty option argument.'
-      exit 17
-    fi
-    ;;
-  -u=* | --url=*)
-    VDM_GLOBAL_URL=${1#*=}
-    if [ -z "$VDM_GLOBAL_URL" ]; then
-      echo '[error] "--url" requires a non-empty option argument.'
-      exit 17
-    fi
-    ;;
-  -v=* | --verbosity=*)
-    VDM_VERBOSITY=${1#*=}
-    if [ -z "$VDM_VERBOSITY" ]; then
-      echo '[error] "--verbosity" requires a non-empty option argument.'
-      exit 17
-    fi
-    ;;
-  --) # End of all options.
-    shift
-    break
-    ;;
-  -?*)
-    printf '[error] Unknown option: %s\n' "$1" >&2
-    exit 1
-    ;;
-  *) # Default case: If no more options then break out of the loop.
-    break
-  esac
-  shift
-done
 
-# load local environment variables
-if [ -f "$VDM_ENV_FILE_PATH" ]; then
-  # shellcheck disable=SC1090
-  source "$VDM_ENV_FILE_PATH"
-fi
+    # if no error, set the VDM_API_FILE_PATH
+    VDM_API_FILE_PATH="${tmp_file}"
 
-# Initialize the global JSON array if not already initialized
-VDM_SUPERPOWERS=${VDM_SUPERPOWERS:-"[]"}
-VDM_POWERS=${VDM_POWERS:-"[]"}
-# Create a global temporary file to store the dataset
-VDM_SUPERPOWERS_FILE=$(mktemp)
-# Initialize the global variable as an empty array or use the environment value if provided
-if [ -z "$VDM_TARGET_NAMESPACE" ]; then
-    VDM_TARGET_NAMESPACE=()
-else
+    # export variables
+    export VDM_API_FILE_PATH
+
+    # success
+    return 0
+  }
+
+  # Function to get autoloaders
+  function getAutoLoaders() {
+    # Check if namespaces array is empty
     # shellcheck disable=SC2128
-    IFS=',' read -r -a VDM_TARGET_NAMESPACE <<< "$VDM_TARGET_NAMESPACE"
-fi
-# Global array to store Joomla namespaces
-declare -A JOOMLA_NAMESPACES
-declare -A JOOMLA_FRAMEWORK
-VDM_LINKED_CLASSES=$(jq -n '{}')
+    if [ -z "$VDM_TARGET_NAMESPACE" ] || [ ${#VDM_TARGET_NAMESPACE[@]} -eq 0 ]; then
+      echo "{}"
+      return 0
+    fi
+    local json
+    local escaped_namespace
+    local path
+    # Initialize the JSON string
+    json="{"
+    # Iterate over the namespaces and populate the JSON string
+    for namespace in "${VDM_TARGET_NAMESPACE[@]}"; do
+      # Escape backslashes in namespace for JSON
+      escaped_namespace=$(echo "$namespace\\" | sed 's/\\/\\\\/g')
+      # Convert namespace to path
+      path="src/${namespace//\\//}"
+      # Append to JSON string
+      json+="\"$escaped_namespace\":\"$path\","
+    done
+    # Remove the trailing comma and close the JSON object
+    json="${json%,}}"
+    # Unset the global variable
+    unset VDM_TARGET_NAMESPACE
+    echo "${json}"
+  }
 
-# if path not set try $PWD path (so you can open a folder that has .octopc file and it will be loaded)
-tmp_path="$PWD/.${PROGRAM_CODE}"
-# if file not set try $VDM_MAIN_DIR path
-[ -f "$tmp_path" ] || tmp_path="$VDM_MAIN_DIR/.${PROGRAM_CODE}"
-# ALWAYS USE GLOBAL IF SET
-VDM_PACKAGE_CONF_FILE=${VDM_PACKAGE_CONF_FILE:-$tmp_path}
+  # set the Package XML Details
+  function setPackageComposerFile() {
+    # little information of progress
+    _echo "[info] Setting the Package Composer File..."
+    local composer_json
+    # Start building the JSON object
+    composer_json=$(jq -n \
+        --arg name "$VDM_NAME" \
+        --arg type "$VDM_PACKAGE_TYPE" \
+        --arg description "$VDM_PACKAGE_DESCRIPTION" \
+        --arg homepage "$VDM_PACKAGE_HOMEPAGE" \
+        --arg license "$VDM_LICENSE" \
+        --arg php_version "$VDM_PACKAGE_PHP" \
+        --argjson autoloader "$(getAutoLoaders)" \
+        '{
+            name: $name,
+            type: $type,
+            description: $description,
+            homepage: $homepage,
+            license: $license,
+            require: {
+                php: $php_version
+            },
+            autoload: {
+                "psr-4": $autoloader
+            }
+        }'
+    )
+    # Add keywords if they exist
+    if [ -n "$VDM_PACKAGE_KEYWORDS" ]; then
+        composer_json=$(echo "$composer_json" | jq --argjson keywords "$VDM_PACKAGE_KEYWORDS" '. + {keywords: $keywords}')
+    fi
+    # add the Joomla framework classes
+    if [ -n "${VDM_PACKAGE_JOOMLA_FRAMEWORK}" ] && [ ${#JOOMLA_FRAMEWORK[@]} -ge 1 ]; then
+      classes_required=$(getJoomlaFrameworkRequired)
+      composer_json=$(echo "$composer_json" | jq --argjson classes_required "$classes_required" '.require += $classes_required')
+    fi
+    # Build the author object conditionally
+    AUTHOR_OBJECT=$(jq -n \
+        --arg name "$VDM_AUTHOR" \
+        --arg email "$VDM_AUTHOR_EMAIL" \
+        --arg homepage "$VDM_AUTHOR_URL" \
+        --arg role "$VDM_AUTHOR_ROLE" \
+        '{
+            name: $name,
+            email: $email,
+            homepage: $homepage,
+            role: $role
+        } | del(.[] | select(. == ""))'
+    )
+    if [ "$(echo "$AUTHOR_OBJECT" | jq 'keys | length')" -gt 0 ]; then
+        composer_json=$(echo "$composer_json" | jq --argjson author "$AUTHOR_OBJECT" '. + {authors: [$author]}')
+    fi
+    # Output the final composer.json content to the specified file
+    echo "$composer_json" | jq . > "$VDM_PACKAGE_COMPOSER_FILE"
+  }
 
-# Check if the config file is passed as a URL
-if [[ "$VDM_PACKAGE_CONF_FILE" =~ ^http: ]] || [[ "$VDM_PACKAGE_CONF_FILE" =~ ^https: ]]; then
-  # Check if the URL is valid
-  if curl --output /dev/null --silent --head --fail "$VDM_PACKAGE_CONF_FILE"; then
-    # Create the directory for the configuration file if it doesn't exist
-    mkdir -p "$HOME/.config/$PROGRAM_CODE/projects"
+  # Convert JOOMLA_FRAMEWORK to a require list
+  function getJoomlaFrameworkRequired() {
+    # Initialize the JSON string
+    json="{"
+    first=true
+    for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
+      if [ "$first" = true ]; then
+        first=false
+      else
+        json+=","
+      fi
+      json+="\"${key//\\//}\": \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\""
+    done
+    json+="}"
+    echo -n "$json"
+  }
 
-    # get a file name
-    file_name=$(getUniqueFileName "$VDM_PACKAGE_CONF_FILE")
+  # Convert JOOMLA_FRAMEWORK to a Markdown list
+  function getJoomlaFramework() {
+    if [ ${#JOOMLA_FRAMEWORK[@]} -eq 0 ]; then
+      echo -n ""
+    else
+      local markdown_list="\n## Joomla Framework Dependencies\n\n"
+      if [ -z "${VDM_PACKAGE_JOOMLA_FRAMEWORK}" ]; then
+        markdown_list+=">You should add the following to your project to ensure the Joomla! framework classes are included.\n\n"
+        for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
+          markdown_list+="- \`composer require ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\`\n";
+          markdown_list+=$(getLinkedClassesMarkdown "${key}");
+          markdown_list+="\n";
+        done
+      else
+        markdown_list+=">We have added the following framework classes to the required list of this Composer package.\n\n"
+        for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
+          markdown_list+="- ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\n";
+          markdown_list+=$(getLinkedClassesMarkdown "${key}");
+          markdown_list+="\n";
+        done
+      fi
+      echo -e "$markdown_list"
+    fi
+  }
 
-    # Download the configuration file
-    curl --silent "$VDM_PACKAGE_CONF_FILE" -o "$HOME/.config/$PROGRAM_CODE/projects/${file_name}_conf.json"
-    VDM_PACKAGE_CONF_FILE="$HOME/.config/$PROGRAM_CODE/projects/${file_name}_conf.json"
-  else
-    # Print an error message and exit if the URL is invalid
-    echo >&2 "[error] The config file at $VDM_PACKAGE_CONF_FILE is not a valid URL. Aborting."
-    exit 18
+  # Convert JOOMLA_NAMESPACES to a Markdown list
+  function getJoomlaDependencies() {
+    if [ ${#JOOMLA_NAMESPACES[@]} -eq 0 ]; then
+      echo -n ""
+    else
+      local markdown_list="\n## Joomla CMS Dependencies\n\n"
+      for key in $(printf "%s\n" "${!JOOMLA_NAMESPACES[@]}" | sort); do
+        markdown_list+="- ${key}\n";
+        markdown_list+=$(getLinkedClassesMarkdown "${key}");
+        markdown_list+="\n";
+      done
+      echo -e "$markdown_list"
+    fi
+  }
+
+  # get the classes linked to this dependency
+  function getLinkedClassesMarkdown() {
+    local dependency="$1"
+    local subset
+    # Extract the subset for the given main_key
+    subset=$(echo "$VDM_LINKED_CLASSES" | jq --arg mk "$dependency" '.[$mk] // {}')
+    # Generate the markdown format
+    echo "$subset" | jq -r 'to_entries[] | "  - [\(.value)](src/\(.key).php)"'
+  }
+
+  # convert VDM_NAME to the desired header format
+  function convertToHeader() {
+      local name="$1"
+      # Replace slashes with spaces
+      name="${name//\// }"
+      # Capitalize the first letter of each word
+      name=$(echo "$name" | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')
+      echo "$name"
+  }
+
+  # set the package README
+  function setReadMe() {
+    # little information of progress
+    _echo "[info] Setting the README..."
+    # add the Project Name to Readme
+    {
+      header=$(convertToHeader "${VDM_NAME:-A Composer Package}")
+      echo -n "# $header"
+      # add the version
+      echo " (${VDM_PACKAGE_VERSION:-1.0.0})"
+      echo ""
+      # set the Description
+      reg="[[:space:]]+"
+      if [[ "${VDM_PACKAGE_DESCRIPTION}" =~ $reg ]]; then
+        echo "${VDM_PACKAGE_DESCRIPTION}"
+      else
+        [ -n "${!VDM_PACKAGE_DESCRIPTION}" ] && echo "${!VDM_PACKAGE_DESCRIPTION}" || echo "${VDM_PACKAGE_DESCRIPTION}"
+      fi
+      echo ""
+      echo "## Details"
+      echo ""
+      echo "- Packager: [${VDM_PACKAGER}](${VDM_PACKAGER_URL})"
+      echo "- Author: [${VDM_AUTHOR:-$PROGRAM_NAME}](${VDM_AUTHOR_URL:-$PROGRAM_URL})"
+      echo "- Creation Date: ${CREATION_DATE}"
+      echo ""
+      echo "### Installation via Composer"
+      echo ""
+      echo "Setup this registry in your \`~/.composer/config.json\` file:"
+      echo "\`\`\`"
+      echo "{"
+      echo "	\"repositories\": [{"
+      echo "			\"type\": \"composer\","
+      echo "			\"url\": \"https://${VDM_REPOSITORY_URL}/api/packages/${VDM_REPOSITORY_OWNER}/composer\""
+      echo "		}"
+      echo "	]"
+      echo "}"
+      echo "\`\`\`"
+      echo ""
+      echo "To install the package using Composer, run the following command:"
+      echo "\`\`\`"
+      echo "composer require ${VDM_NAME:-error}:${VDM_PACKAGE_VERSION:-1.0.0}"
+      echo "\`\`\`"
+      getJoomlaFramework
+      getJoomlaDependencies
+      echo ""
+      echo "### License"
+      echo "> ${VDM_LICENSE:-none}"
+      echo ""
+    } >"${VDM_README_MD}"
+  }
+
+  # set the license file
+  function setLicenseFile() {
+    local has_error=false
+    # check if the license file is passed via a URL
+    if [[ "${VDM_LICENSE_FILE}" =~ ^"http:" ]] || [[ "${VDM_LICENSE_FILE}" =~ ^"https:" ]]; then
+      # shellcheck disable=SC2143
+      if [[ $(wget -S --spider "${VDM_LICENSE_FILE}" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
+        wget --quiet "${VDM_LICENSE_FILE}" -O "${VDM_LICENSE_FILE_PATH}"
+        VDM_LICENSE_FILE="LICENSE"
+      else
+        echo >&2 "[error] The license:${VDM_LICENSE_FILE} is not a valid URL."
+        has_error=true
+      fi
+    elif [ -f "${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE}" ]; then
+      # now copy the license file
+      cp "${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE}" "${VDM_LICENSE_FILE_PATH}"
+    else
+      echo >&2 "[error] The license:${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE} not found."
+      has_error=true
+    fi
+    # check if we have some errors
+    if $has_error; then
+      return 16
+    fi
+    # little information of progress
+    _echo "[info] Setting the License File..."
+    return 0
+  }
+
+  # get the package repository
+  function setRepository() {
+    # change to git directory
+    cd "${VDM_PACKAGE_GIT_DIR}" || return 22
+    # check if the repository exist on our gitea instance
+    local update_repo
+    # shellcheck disable=SC2015
+    if git ls-remote "ssh://git@${VDM_REPOSITORY_URL}/${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.git" -q >/dev/null 2>&1; then
+      getExistingRepository || return 23
+      update_repo=true
+    else
+      setNewRepository || return 24
+      update_repo=false
+    fi
+    # make sure we are in the correct dir and then remove all existing data
+    cd "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" || return 25
+    # remove any existing files and folders from repository
+    rm -rf -- * || return 26
+    # move all new files into repository
+    setRepositoryNewFiles || return 27
+    # make sure we are in the correct dir and then remove all existing data
+    cd "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" || return 25
+    # check if we have changes
+    if $update_repo && [[ -z $(git status --porcelain) ]]; then
+      _echo "[info] No changes found in (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+    else
+      # check if we must update or create repository
+      if $update_repo; then
+        # make API call
+        getGiteaApiBucket "tags" "${VDM_REPOSITORY_OWNER}" "${VDM_REPOSITORY_REPO}" "${VDM_PACKAGE_API}" "${VDM_PACKAGE_TOKEN}" || return 28
+        # check if tag exists
+        VDM_TAG_EXIST=$(echo "${VDM_API_BUCKET}" | jq -r --arg TAG "${VDM_PACKAGE_VERSION:-1.0.0}" 'any(.[]; .name == $TAG)')
+        # set update message
+        if $VDM_TAG_EXIST; then
+          message="Update - ${VDM_PACKAGE_VERSION:-1.0.0}"
+        else
+          message="Update"
+        fi
+        # add user details
+        setUserDetails
+        # get the repository last tag
+        makeGitCommit "${message}" "${VDM_PACKAGE_VERSION:-1.0.0}" "$VDM_TAG_EXIST" || return 28
+        # give little notice of progress
+        _echo "[info] Pushing changes to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+        # make a normal push update
+        git push >/dev/null 2>&1 || return 30
+        if ! $VDM_TAG_EXIST; then
+          git push --tags >/dev/null 2>&1 || return 30
+        fi
+      else
+        # create new repo
+        setGitRepository || return 29
+        # give little notice of progress
+        _echo "[info] Pushing (TO CREATE) changes to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+        # push to creat the repository (if allowed)
+        if [[ "${VDM_REPOSITORY_BRANCH}" == 'default' ]]; then
+          git push -u origin master >/dev/null 2>&1 || return 30
+        else
+          git push -u origin "${VDM_REPOSITORY_BRANCH:-master}" >/dev/null 2>&1 || return 30
+        fi
+        git push --tags >/dev/null 2>&1 || return 30
+      fi
+    fi
+    # success
+    return 0
+  }
+
+  # get the existing repository
+  function getExistingRepository() {
+    # little information of progress
+    _echo "[info] Getting (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+    if [[ "${VDM_REPOSITORY_BRANCH}" == 'default' ]]; then
+      # clone the existing repository
+      git clone "ssh://git@${VDM_REPOSITORY_URL}/${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.git" >/dev/null 2>&1 || return 23
+    else
+      # clone the existing repository
+      git clone -b "${VDM_REPOSITORY_BRANCH:-master}" "ssh://git@${VDM_REPOSITORY_URL}/${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.git" >/dev/null 2>&1 || return 23
+    fi
+    # success
+    return 0
+  }
+
+  # set the new repository
+  function setNewRepository() {
+    # little information of progress
+    _echo "[info] Creating (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) folder"
+    # check if the repository exist on our gitea instance
+    mkdir -p "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" || return 24
+    # success
+    return 0
+  }
+
+  # set new git repository
+  function setGitRepository() {
+    # little information of progress
+    _echo "[info] Initializing the (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+    # initialize the repository
+    git init >/dev/null 2>&1 || return 29
+    # add user details
+    setUserDetails
+    # add the first commit
+    makeGitCommit "First Commit - ${VDM_PACKAGE_VERSION:-1.0.0}" "${VDM_PACKAGE_VERSION:-1.0.0}" >/dev/null 2>&1 || return 28
+    # little information of progress
+    _echo "[info] Adding remote branch to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+    # add the remote branch
+    git remote add origin "ssh://git@${VDM_REPOSITORY_URL}/${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}.git" >/dev/null 2>&1 || return 29
+    # Check if a specific branch is set and it is not 'default'
+    if [ "${VDM_REPOSITORY_BRANCH}" != "default" ]; then
+      _echo "[info] Setting branch to ${VDM_REPOSITORY_BRANCH}"
+      git checkout -b "${VDM_REPOSITORY_BRANCH:-master}" >/dev/null 2>&1 || return 29
+    fi
+    #success
+    return 0
+  }
+
+  # Set Git user details based on environment variables
+  function setUserDetails () {
+    # Set Git author name
+    if [ -n "${GIT_AUTHOR_NAME+x}" ]; then
+      git config user.name "${GIT_AUTHOR_NAME}"
+      _echo "[info] Git author name set to: ${GIT_AUTHOR_NAME}"
+    fi
+
+    # Set Git author email
+    if [ -n "${GIT_AUTHOR_EMAIL+x}" ]; then
+      git config user.email "${GIT_AUTHOR_EMAIL}"
+      _echo "[info] Git author email set to: ${GIT_AUTHOR_EMAIL}"
+    fi
+
+    # Set signing key
+    if [ -n "${GIT_SIGNING_KEY+x}" ]; then
+      git config user.signingKey "${GIT_SIGNING_KEY}"
+      _echo "[info] Git signing key set to: ${GIT_SIGNING_KEY}"
+    fi
+
+    # Set Git GPG sign
+    if [ -n "${GIT_GPG_SIGN+x}" ]; then
+      git config commit.gpgsign "${GIT_GPG_SIGN}"
+      _echo "[info] Git GPG sign set to: ${GIT_GPG_SIGN}"
+    fi
+
+    # Set Git SSH key path
+    if [ -n "${GIT_SSH_KEY_PATH+x}" ]; then
+      git config core.sshCommand "ssh -i ${GIT_SSH_KEY_PATH}"
+      _echo "[info] Git SSH key path set to: ${GIT_SSH_KEY_PATH}"
+    fi
+  }
+
+  # make the git commit
+  function makeGitCommit() {
+    # add all (or remove)
+    git add . >/dev/null 2>&1 || return 28
+    # little information of progress
+    _echo "[info] Committing (${1}) to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+    # set the commit message
+    git commit -am"${1}" >/dev/null 2>&1 || return 28
+    # check if the tag should be added
+    if "${3:-false}"; then
+      # little information of progress
+      _echo "[info] TAG (${2}) in (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) already exists"
+    else
+      # little information of progress
+      _echo "[info] Adding TAG (${2}) to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+      # add the new tag
+      git tag "${2}" >/dev/null 2>&1 || return 28
+    fi
+    # success
+    return 0
+  }
+
+  # add all the new files to the repository
+  function setRepositoryNewFiles() {
+    # little information of progress
+    _echo "[info] Moving new files into the (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) directory"
+    _echo "[info] Removing the ${VDM_PACKAGE_DIR:?} directory"
+    # move all the new files
+    if [ -d "${VDM_PACKAGE_DIR}" ]; then
+      mv "${VDM_PACKAGE_DIR:?}/"* "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" >/dev/null 2>&1 &&
+        rm -rf "${VDM_PACKAGE_DIR:?}" >/dev/null 2>&1 ||
+        return 27
+    else
+      return 27
+    fi
+    # success
+    return 0
+  }
+
+  # set a composer package
+  function setComposerPackage() {
+    # remove the git directory
+    rm -fr "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}/.git" || return 31
+    # zip the package
+    _zip "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}" "${VDM_PACKAGE_ZIP_FILE}"|| return 31
+    # now push out the package
+    pushComposerPackage || return 31
+  }
+
+  # Push a composer package out
+  function pushComposerPackage() {
+    local package_version="${VDM_PACKAGE_VERSION:-1.0.0}"
+    local upload_url="https://${VDM_REPOSITORY_URL}/api/packages/${VDM_REPOSITORY_OWNER}/composer?version=${package_version}"
+
+    # Upload the package if the version does not exist
+    response_code=$(curl --write-out "%{http_code}" --silent --output /dev/null \
+      --user "${GIT_AUTHOR_NAME}:${VDM_REPOSITORY_TOKEN}" \
+      --upload-file "${VDM_PACKAGE_ZIP_FILE}" \
+      "${upload_url}")
+
+    if [[ "$response_code" -ne 201 ]]; then
+      echo >&2 "[warning] Pushing the composer package failed with response code:${response_code}"
+      _echo "[info] Composer package (${VDM_REPOSITORY_REPO}) version:${package_version} might already exists. Please check!"
+      _echo "[info] You can not push the same package version a second time, you must delete it, or choose a new version."
+      return 0
+    fi
+
+    _echo "[info] Composer package (${VDM_REPOSITORY_REPO}) version:${package_version} uploaded successfully."
+    return 0
+  }
+
+  # gives us a unique file name for any url
+  function getUniqueFileName() {
+    local url="$1"
+    local hash
+    hash=$(echo "$url" | sha256sum | awk '{print $1}')
+    echo "${hash:0:10}"
+  }
+
+  # give the echo messages
+  # only if not set to be quiet
+  function _echo() {
+    if (("$QUIET" == 0)); then
+      echo "$1"
+    fi
+  }
+
+  # Zip the content of a path
+  function _zip() {
+      local folder_path="${1}"
+      local zip_path="${2}"
+      if [[ ! -d $folder_path ]]; then
+          echo >&2 "[error] Directory $folder_path does not exist."
+          return 1
+      fi
+      # Ensure the folder path does not end with a slash
+      folder_path=${folder_path%/}
+      # Navigate to the folder
+      cd "$folder_path" || { echo >&2 "[error] Unable to navigate to $folder_path."; return 1; }
+      # Create the zip file containing the contents of the folder
+      if cat < <(zip -r "${zip_path}" ./* ) >/dev/null 2>&1; then
+        _echo "[info] Successfully zipped the package (${zip_path})"
+        return 0
+      fi
+      return 1
+  }
+
+  # Perform string replacements (VDM_REPOSITORY_REPLACEMENT)
+  function strReplace() {
+      local content="$1"
+      local result="$content"
+      local pairs
+      local pair_decoded
+      local key
+      local value
+
+      # Extract keys and values and perform replacements
+      pairs=$(echo "$VDM_REPOSITORY_REPLACEMENT" | jq -r 'to_entries | .[] | @base64')
+
+      # Loop over the pairs without creating a subshell
+      while IFS= read -r pair; do
+          # Decode from base64
+          pair_decoded=$(echo "$pair" | base64 --decode)
+          key=$(echo "$pair_decoded" | jq -r .key)
+          value=$(echo "$pair_decoded" | jq -r .value)
+
+          # Perform replacements in the string
+          # shellcheck disable=SC2001
+          result=$(echo "$result" | sed "s|${key//\\/\\\\}|${value//\\/\\\\}|g")
+      done <<< "$pairs"  # Redirect the variable into the loop to avoid subshells
+
+      echo "$result"
+  }
+
+  # Replace strings in a file directly (VDM_REPOSITORY_REPLACEMENT)
+  function fileReplaceStrings() {
+      local file_path="$1"
+
+      # Check if the file exists
+      if [[ ! -f "$file_path" ]]; then
+          echo "File does not exist: $file_path"
+          return 1
+      fi
+
+      # Extract keys and values and perform replacements
+      echo "$VDM_REPOSITORY_REPLACEMENT" | jq -r 'to_entries | .[] | @base64' |
+      while IFS= read -r pair; do
+          # Decode from base64
+          pair_decoded=$(echo "$pair" | base64 --decode)
+          key=$(echo "$pair_decoded" | jq -r .key)
+          value=$(echo "$pair_decoded" | jq -r .value)
+
+          # Perform replacements in the file using unescaped values
+          sed -i "s|${key//\\/\\\\}|${value//\\/\\\\}|g" "$file_path"
+      done
+  }
+
+  # uninstalls the octopc program.
+  function runUninstall() {
+    # now remove the script
+    if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
+      sudo rm -f "/usr/local/bin/${PROGRAM_CODE}"
+      echo "[info] ${PROGRAM_NAME} v${PROGRAM_VERSION} has been completely uninstalled."
+    else
+      echo "[info] ${PROGRAM_NAME} v${PROGRAM_VERSION} is not installed."
+    fi
+  }
+
+  # check if we have project overrides for the environment variables
+  function getProjectEnvironment() {
+    # load the config data
+    VDM_CONFIG_DATA=$(cat "$VDM_PACKAGE_CONF_FILE")
+    # make sure we have package details
+    if [[ "${VDM_CONFIG_DATA}" =~ '"package"' ]] && [[ "${VDM_CONFIG_DATA}" =~ '"powers"' ]]; then
+      # little information of progress
+      _echo "[info] Loading the environment variables..."
+      # make configuration globally available
+      export VDM_CONFIG_DATA
+      # get package code_name
+      getConfigValue 'VDM_CODE_NAME' '.package.code_name'
+      # the tmp path to the env of this project
+      tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.${VDM_CODE_NAME}"
+      # shellcheck disable=SC1090
+      [ -f "${tmp_path}" ] && source "${tmp_path}"
+      # clear this tmp out
+      unset tmp_path
+      # success
+      return 0
+    else
+      # failed
+      return 17
+    fi
+  }
+
+  # updates the octopc program to the latest version.
+  function runUpdate() {
+    # remove the current version
+    if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
+      # just backup in case of failure
+      sudo mv "/usr/local/bin/${PROGRAM_CODE}" "/usr/local/bin/${PROGRAM_CODE}.bak"
+    fi
+    # pull the latest version. Master is always the latest
+    if sudo curl --fail -L "https://git.vdm.dev/api/v1/repos/octoleo/${PROGRAM_CODE}/raw/src/${PROGRAM_CODE}?ref=${branch:-master}" -o "/usr/local/bin/${PROGRAM_CODE}" 2>/dev/null; then
+      # give success message
+      echo "[success] Update was successful."
+      # do we have a backup
+      if [ -f "/usr/local/bin/${PROGRAM_CODE}.bak" ]; then
+        # lets remove it now
+        sudo rm -f "/usr/local/bin/${PROGRAM_CODE}.bak"
+      fi
+    else
+      # show the error
+      echo >&2 "[error] Update failed! Please try again later."
+      # do we have a backup
+      if [ -f "/usr/local/bin/${PROGRAM_CODE}.bak" ]; then
+        # move backup back
+        sudo mv "/usr/local/bin/${PROGRAM_CODE}.bak" "/usr/local/bin/${PROGRAM_CODE}"
+      fi
+    fi
+    # always set the permission again if we have a file
+    if [ -f "/usr/local/bin/${PROGRAM_CODE}" ]; then
+      # the we make sure its executable
+      sudo chmod +x "/usr/local/bin/${PROGRAM_CODE}"
+    fi
+    # always exit so the new script can load
+    exit 0
+  }
+
+  # help message ʕ•ᴥ•ʔ
+  function show_help() {
+    cat <<EOF
+  Usage: ${PROGRAM_CODE} [OPTION...]
+    Options
+    ======================================================
+     -p | --packager=<packager Name>
+    Packager name
+    example: ${PROGRAM_CODE} -p="Vast Development Method"
+    ======================================================
+     -pu | --packager-url=<//packager.url>
+    Packager url
+    example: ${PROGRAM_CODE} -pu="https://git.vdm.dev/"
+    ======================================================
+     -md | --main-dir=<path>
+    load the main working directory
+    example: ${PROGRAM_CODE} --main-dir=/src
+    ======================================================
+     -e | --env=<file>
+    load the environment variables file
+    example: ${PROGRAM_CODE} --env=/src/.env
+    ======================================================
+     --conf | --config=<path/url>
+    load the configuration for the package in json format
+       file-example: src/example.json
+    example: ${PROGRAM_CODE} --config=config.json
+    ======================================================
+     -ld | --licence-dir=<path>
+    load the licence directory
+    example: ${PROGRAM_CODE} --licence-dir=/src/licence
+    ======================================================
+     -t | --token=<access_token>
+    load the global token
+    example: ${PROGRAM_CODE} --token=xxxxxxxxxxxxxxxxxxxxxxxxx
+    ======================================================
+     -u | --url=<gitea>
+    Global url of the Gitea instance
+    example: ${PROGRAM_CODE} --url="git.vdm.dev"
+    ======================================================
+     -a | --api=<//gitea.api>
+    Global api of the Gitea instance
+    example: ${PROGRAM_CODE} --api="https://git.vdm.dev/api/v1"
+    ======================================================
+     -q | --quiet
+    mute all output messages
+    example: ${PROGRAM_CODE} --quiet
+    ======================================================
+     --update
+    to update your install
+    example: ${PROGRAM_CODE} --update
+    ======================================================
+     --uninstall
+    to uninstall this script
+    example: ${PROGRAM_CODE} --uninstall
+    ======================================================
+     -h|--help
+    display this help menu
+    example: ${PROGRAM_CODE} -h
+    example: ${PROGRAM_CODE} --help
+    ======================================================
+        ${PROGRAM_NAME} v${PROGRAM_VERSION}
+    ======================================================
+EOF
+  }
+
+  # SET THE DEFAULTS #####################################
+  # get start time
+  # shellcheck disable=SC2034
+  START_BUILD=$(date +"%s")
+  # use UTC+00:00 time also called zulu
+  # shellcheck disable=SC2034
+  START_DATE=$(TZ=":ZULU" date +"%m/%d/%Y @ %R (UTC)")
+  CREATION_DATE=$(TZ=":ZULU" date +"%B %Y")
+
+  # the quiet switch
+  QUIET="${QUIET:-0}"
+
+  # we set the packager directories
+  tmp_path="/home/$USER/${PROGRAM_CODE}"
+  # ALWAYS USE GLOBAL IF SET
+  VDM_MAIN_DIR="${VDM_MAIN_DIR:-$tmp_path}"
+
+  # we set the licenses directory
+  tmp_path="${VDM_MAIN_DIR}/licenses"
+  [ -d "$tmp_path" ] || tmp_path="/home/$USER/${PROGRAM_CODE}/licenses"
+  # if path not set try $PWD path
+  [ -d "$tmp_path" ] || tmp_path="$PWD"
+  # ALWAYS USE GLOBAL IF SET
+  VDM_LICENSE_DIR="${VDM_LICENSE_DIR:-$tmp_path}"
+
+  # the environment file variables path
+  tmp_path="$PWD/.env_${PROGRAM_CODE}"
+  # if file not set try $PWD path
+  [ -f "$tmp_path" ] || tmp_path="$VDM_MAIN_DIR/.env_${PROGRAM_CODE}"
+  # if file not set try $VDM_MAIN_DIR path
+  [ -f "$tmp_path" ] || tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.env"
+  # ALWAYS USE GLOBAL IF SET
+  VDM_ENV_FILE_PATH="${VDM_ENV_FILE_PATH:-$tmp_path}"
+
+  # clear this tmp out
+  unset tmp_path
+
+  # check if we have options
+  while :; do
+    case $1 in
+    -h | --help)
+      show_help # Display a usage synopsis.
+      exit
+      ;;
+    -q | --quiet)
+      QUIET=1
+      ;;
+    --uninstall)
+      runUninstall
+      shift
+      ;;
+    --update)
+      runUpdate
+      shift
+      ;;
+    -md=* | --main-dir=*)
+      VDM_MAIN_DIR=${1#*=}
+      if [ -z "$VDM_MAIN_DIR" ]; then
+        echo '[error] "--main-dir" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    -e=* | --env=*)
+      VDM_ENV_FILE_PATH=${1#*=}
+      if [ -z "$VDM_ENV_FILE_PATH" ]; then
+        echo '[error] "--env" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    --conf=* | --config=*)
+      VDM_PACKAGE_CONF_FILE=${1#*=}
+      if [ -z "$VDM_PACKAGE_CONF_FILE" ]; then
+        echo '[error] "--conf" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    -ld=* | --licence-dir=*)
+      VDM_LICENSE_DIR=${1#*=}
+      if [ -z "$VDM_LICENSE_DIR" ]; then
+        echo '[error] "--licence-dir" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    -p=* | --packager=*)
+      VDM_PACKAGER=${1#*=}
+      if [ -z "$VDM_PACKAGER" ]; then
+        echo '[error] "--packager" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    -pu=* | --packager-url=*)
+      VDM_PACKAGER_URL=${1#*=}
+      if [ -z "$VDM_PACKAGER_URL" ]; then
+        echo '[error] "--packager-url" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    -t=* | --token=*)
+      VDM_GLOBAL_TOKEN=${1#*=}
+      if [ -z "$VDM_GLOBAL_TOKEN" ]; then
+        echo '[error] "--token" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    -a=* | --api=*)
+      VDM_GLOBAL_API=${1#*=}
+      if [ -z "$VDM_GLOBAL_API" ]; then
+        echo '[error] "--api" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    -u=* | --url=*)
+      VDM_GLOBAL_URL=${1#*=}
+      if [ -z "$VDM_GLOBAL_URL" ]; then
+        echo '[error] "--url" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    -v=* | --verbosity=*)
+      VDM_VERBOSITY=${1#*=}
+      if [ -z "$VDM_VERBOSITY" ]; then
+        echo '[error] "--verbosity" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    --) # End of all options.
+      shift
+      break
+      ;;
+    -?*)
+      printf '[error] Unknown option: %s\n' "$1" >&2
+      exit 1
+      ;;
+    *) # Default case: If no more options then break out of the loop.
+      break
+    esac
+    shift
+  done
+
+  # load local environment variables
+  if [ -f "$VDM_ENV_FILE_PATH" ]; then
+    # shellcheck disable=SC1090
+    source "$VDM_ENV_FILE_PATH"
   fi
-fi
 
-# make sure whe have a configuration file
-[ -f "${VDM_PACKAGE_CONF_FILE}" ] || {
-  echo >&2 "[error] The config:${VDM_PACKAGE_CONF_FILE:-empty_value} could not be found. Aborting."
-  exit 18
-}
+  # Initialize the global JSON array if not already initialized
+  : "${VDM_SUPERPOWERS:="[]"}"
+  : "${VDM_POWERS:="[]"}"
+  : "${VDM_EXCLUDE_POWERS:="[]"}"
 
-# run Main ┬┴┬┴┤(･_├┬┴┬┴
-main
+  # Create a global temporary file to store the dataset
+  VDM_SUPERPOWERS_FILE=$(mktemp)
+  # Initialize the global variable as an empty array or use the environment value if provided
+  if [ -z "$VDM_TARGET_NAMESPACE" ]; then
+      VDM_TARGET_NAMESPACE=()
+  else
+      # shellcheck disable=SC2128
+      IFS=',' read -r -a VDM_TARGET_NAMESPACE <<< "$VDM_TARGET_NAMESPACE"
+  fi
+  # Global array to store Joomla namespaces
+  declare -A JOOMLA_NAMESPACES
+  declare -A JOOMLA_FRAMEWORK
+  VDM_LINKED_CLASSES=$(jq -n '{}')
+
+  # if path not set try $PWD path (so you can open a folder that has .octopc file and it will be loaded)
+  tmp_path="$PWD/.${PROGRAM_CODE}"
+  # if file not set try $VDM_MAIN_DIR path
+  [ -f "$tmp_path" ] || tmp_path="$VDM_MAIN_DIR/.${PROGRAM_CODE}"
+  # ALWAYS USE GLOBAL IF SET
+  VDM_PACKAGE_CONF_FILE=${VDM_PACKAGE_CONF_FILE:-$tmp_path}
+
+  # Check if the config file is passed as a URL
+  if [[ "$VDM_PACKAGE_CONF_FILE" =~ ^http: ]] || [[ "$VDM_PACKAGE_CONF_FILE" =~ ^https: ]]; then
+    # Check if the URL is valid
+    if curl --output /dev/null --silent --head --fail "$VDM_PACKAGE_CONF_FILE"; then
+      # Create the directory for the configuration file if it doesn't exist
+      mkdir -p "$HOME/.config/$PROGRAM_CODE/projects"
+
+      # get a file name
+      file_name=$(getUniqueFileName "$VDM_PACKAGE_CONF_FILE")
+
+      # Download the configuration file
+      curl --silent "$VDM_PACKAGE_CONF_FILE" -o "$HOME/.config/$PROGRAM_CODE/projects/${file_name}_conf.json"
+      VDM_PACKAGE_CONF_FILE="$HOME/.config/$PROGRAM_CODE/projects/${file_name}_conf.json"
+    else
+      # Print an error message and exit if the URL is invalid
+      echo >&2 "[error] The config file at $VDM_PACKAGE_CONF_FILE is not a valid URL. Aborting."
+      exit 18
+    fi
+  fi
+
+  # make sure whe have a configuration file
+  [ -f "${VDM_PACKAGE_CONF_FILE}" ] || {
+    echo >&2 "[error] The config:${VDM_PACKAGE_CONF_FILE:-empty_value} could not be found. Aborting."
+    exit 18
+  }
+
+  # run Main ┬┴┬┴┤(･_├┬┴┬┴
+  main "$@"
+)
 
 exit 0

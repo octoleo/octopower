@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="OctoPower"
 PROGRAM_CODE="octopower"
-PROGRAM_VERSION="2.0.0"
+PROGRAM_VERSION="2.0.1"
 PROGRAM_V="2.0"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -14,6 +14,10 @@ command -v git >/dev/null 2>&1 || {
 }
 command -v curl >/dev/null 2>&1 || {
   echo >&2 "[error] We require curl for $PROGRAM_NAME v${PROGRAM_VERSION} to work, but it's not installed.  Aborting."
+  exit 1
+}
+command -v wget >/dev/null 2>&1 || {
+  echo >&2 "[error] We require wget for $PROGRAM_NAME v${PROGRAM_VERSION} to work, but it's not installed.  Aborting."
   exit 1
 }
 command -v jq >/dev/null 2>&1 || {
@@ -40,6 +44,8 @@ command -v sed >/dev/null 2>&1 || {
       clearMainEnv
       exit 1
     }
+    # when a dry run
+    showDryRunNotice
     # get the package details
     getPackageDetails || {
       echo >&2 "[error] We require config file with correct packaging details for $PROGRAM_NAME v${PROGRAM_VERSION} to work, but it's not found in/at $VDM_PACKAGE_CONF_FILE.  Aborting."
@@ -66,6 +72,8 @@ command -v sed >/dev/null 2>&1 || {
     }
     # set the package composer file
     setPackageComposerFile
+    # set license
+    setLicenseFile
     # set the readme
     setReadMe
     # get package repository
@@ -86,6 +94,23 @@ command -v sed >/dev/null 2>&1 || {
     clearMainEnv
     # final message
     _echo "[Success] Package completely updated!"
+  }
+
+  # show dry run notice
+  function showDryRunNotice() {
+    _dry_run ""
+    _dry_run "======================================================================"
+    _dry_run "      THIS IS A DRY RUN!"
+    _dry_run "======================================================================"
+    _dry_run ""
+    _dry_run " This means we will not update remote systems."
+    _dry_run " But will perform all expected tasks locally."
+    _dry_run " We will not clear folders and files created, and set locally."
+    _dry_run " Which mean you will need to clear those manually (after review)."
+    _dry_run ""
+    _dry_run "ALL remote changing events will be explained and marked as [dry-run]"
+    _dry_run "======================================================================"
+    _dry_run ""
   }
 
   # set the package details
@@ -116,13 +141,16 @@ command -v sed >/dev/null 2>&1 || {
     getConfigValue 'VDM_PACKAGE_PHP' '.package.php' || has_error=true
     getConfigValue 'VDM_PACKAGE_JOOMLA_FRAMEWORK' '.package.joomla_framework' false || unset VDM_PACKAGE_JOOMLA_FRAMEWORK
     getConfigValue 'VDM_PACKAGE_VERSION' '.package.version' || has_error=true
-    getConfigValue 'VDM_LICENSE' '.package.license' || has_error=true
-    getConfigValue 'VDM_LICENSE_FILE' '.package.license_file' false || unset VDM_LICENSE_FILE
-    getConfigValue 'VDM_LICENSE_FILE_PATH' '.package.license_file_path' false || unset VDM_LICENSE_FILE_PATH
+    getConfigValue 'VDM_PACKAGE_LICENSE' '.package.license' || has_error=true
+    getConfigValue 'VDM_PACKAGE_LICENSE_FILE' '.package.license_file' false || unset VDM_PACKAGE_LICENSE_FILE
+    getConfigValue 'VDM_PACKAGE_LICENSE_FILE_PATH' '.package.license_file_path' false || unset VDM_PACKAGE_LICENSE_FILE_PATH
     getConfigValue 'VDM_AUTHOR' '.package.author' false || unset VDM_AUTHOR
     getConfigValue 'VDM_AUTHOR_EMAIL' '.package.author_email' false || unset VDM_AUTHOR_EMAIL
     getConfigValue 'VDM_AUTHOR_URL' '.package.author_url' false || unset VDM_AUTHOR_URL
     getConfigValue 'VDM_AUTHOR_ROLE' '.package.author_role' false || unset VDM_AUTHOR_ROLE
+    getConfigValue 'VDM_PACKAGE_ADDITIONAL_README' '.package.additional_readme' false || unset VDM_PACKAGE_ADDITIONAL_README
+    getConfigValue 'VDM_PACKAGE_ADDITIONAL_README_FILE' '.package.additional_readme_file' false || unset VDM_PACKAGE_ADDITIONAL_README_FILE
+    getConfigValue 'VDM_PACKAGE_README_FILE_PATH' '.package.readme_file_path' false || unset VDM_PACKAGE_README_FILE_PATH
     # check if we have some errors already
     $has_error && return 13
 
@@ -182,27 +210,27 @@ command -v sed >/dev/null 2>&1 || {
     # little information of progress
     _echo "[info] Setting the Package Directories..."
     # the full project path
-    VDM_PACKAGE_DIR="${VDM_MAIN_DIR}/${VDM_REPOSITORY_REPO}"
-    VDM_PACKAGE_GIT_DIR="${VDM_MAIN_DIR}/git"
-    VDM_PACKAGE_SRC_DIR="${VDM_PACKAGE_DIR}/src"
-    VDM_PACKAGE_ZIP_FILE="${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}.${VDM_PACKAGE_VERSION:-1.0.0}.zip"
+    : "${VDM_PACKAGE_DIR:="${VDM_MAIN_DIR}/${VDM_REPOSITORY_REPO}"}"
+    : "${VDM_PACKAGE_GIT_DIR:="${VDM_MAIN_DIR}/git"}"
+    : "${VDM_PACKAGE_SRC_DIR:="${VDM_PACKAGE_DIR}/src"}"
+    : "${VDM_PACKAGE_ZIP_FILE:="${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}.${VDM_PACKAGE_VERSION:-1.0.0}.zip"}"
     # makes the project path available
     export VDM_PACKAGE_DIR
     export VDM_PACKAGE_GIT_DIR
     export VDM_PACKAGE_SRC_DIR
     export VDM_PACKAGE_ZIP_FILE
     # always remove previous files (if found)
-    clearFiles
+    resetFiles
     # set the license file
-    VDM_PACKAGE_LICENSE_FILE_PATH="${VDM_PACKAGE_DIR}/LICENSE"
+    : "${VDM_PACKAGE_LICENSE_FILE_PATH:="${VDM_PACKAGE_DIR}/LICENSE"}"
+    # set the README
+    : "${VDM_PACKAGE_README_FILE_PATH:="${VDM_PACKAGE_DIR}/README.md"}"
     # set the package composer file
     VDM_PACKAGE_COMPOSER_FILE="${VDM_PACKAGE_DIR}/composer.json"
-    # set the README
-    VDM_README_MD="${VDM_PACKAGE_DIR}/README.md"
     # makes the project file locations available
     export VDM_PACKAGE_LICENSE_FILE_PATH
+    export VDM_PACKAGE_README_FILE_PATH
     export VDM_PACKAGE_COMPOSER_FILE
-    export VDM_README_MD
     # make sure the packages dir is created
     mkdir -p "${VDM_PACKAGE_DIR}" || return 12
     #make sure the src dir is created
@@ -894,7 +922,7 @@ command -v sed >/dev/null 2>&1 || {
     unset VDM_PACKAGE_ZIP_FILE
     unset VDM_PACKAGE_LICENSE_FILE_PATH
     unset VDM_PACKAGE_COMPOSER_FILE
-    unset VDM_README_MD
+    unset VDM_PACKAGE_README_FILE_PATH
     # SET IN: getPackageDetails
     unset VDM_CONFIG_DATA
     unset VDM_PACKAGER
@@ -911,9 +939,8 @@ command -v sed >/dev/null 2>&1 || {
     unset VDM_PACKAGE_PHP
     unset VDM_PACKAGE_JOOMLA_FRAMEWORK
     unset VDM_PACKAGE_VERSION
-    unset VDM_LICENSE
-    unset VDM_LICENSE_FILE
-    unset VDM_LICENSE_FILE_PATH
+    unset VDM_PACKAGE_LICENSE
+    unset VDM_PACKAGE_LICENSE_FILE
     unset VDM_AUTHOR
     unset VDM_AUTHOR_EMAIL
     unset VDM_AUTHOR_URL
@@ -933,6 +960,17 @@ command -v sed >/dev/null 2>&1 || {
 
   # clear all this projects files
   function clearFiles() {
+    # when a dry run
+    _dry_run "[dry-run] We would have cleared all directories."
+    _dry_run "[dry-run] Therefore, ${VDM_PACKAGE_GIT_DIR:?}/${VDM_REPOSITORY_REPO:?} should still exist." && return 0
+    # always remove files
+    rm -fr "${VDM_PACKAGE_DIR:?}"
+    rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_REPOSITORY_REPO:?}"
+    rm -fr "${VDM_PACKAGE_ZIP_FILE:?}"
+  }
+
+  # clear all the projects files if they exist
+  function resetFiles() {
     # always remove files
     rm -fr "${VDM_PACKAGE_DIR:?}"
     rm -fr "${VDM_PACKAGE_GIT_DIR:?}/${VDM_REPOSITORY_REPO:?}"
@@ -1195,21 +1233,49 @@ command -v sed >/dev/null 2>&1 || {
     echo -n "$json"
   }
 
+  # get the additional readme content
+  function getAdditionalReadme() {
+      # check if the additional readme content file is passed via a URL
+      if [ -n "${VDM_PACKAGE_ADDITIONAL_README_FILE}" ]; then
+        if [[ "${VDM_PACKAGE_ADDITIONAL_README_FILE}" =~ ^"http:" ]] || [[ "${VDM_PACKAGE_ADDITIONAL_README_FILE}" =~ ^"https:" ]]; then
+            # check if the URL is accessible
+            # shellcheck disable=SC2143
+            if [[ $(wget -S --spider "${VDM_PACKAGE_ADDITIONAL_README_FILE}" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
+              echo ""
+              # fetch and print the content from the URL
+              wget --quiet -O - "${VDM_PACKAGE_ADDITIONAL_README_FILE}"
+            fi
+        elif [ -f "${VDM_PACKAGE_ADDITIONAL_README_FILE}" ]; then
+          echo ""
+          # print the content of the local file
+          cat "${VDM_PACKAGE_ADDITIONAL_README_FILE}"
+        fi
+      fi
+      # check if we have additional readme content set and print it
+      if [ -n "${VDM_PACKAGE_ADDITIONAL_README}" ]; then
+        echo ""
+        echo "${VDM_PACKAGE_ADDITIONAL_README}"
+        echo ""
+      fi
+  }
+
+
   # Convert JOOMLA_FRAMEWORK to a Markdown list
   function getJoomlaFramework() {
     if [ ${#JOOMLA_FRAMEWORK[@]} -eq 0 ]; then
       echo -n ""
     else
       local markdown_list="\n## Joomla Framework Dependencies\n\n"
+      markdown_list+="> Here we list the framework dependencies and provide links to where they are used.\n\n";
       if [ -z "${VDM_PACKAGE_JOOMLA_FRAMEWORK}" ]; then
-        markdown_list+=">You should add the following to your project to ensure the Joomla! framework classes are included.\n\n"
+        markdown_list+="> You should add the following to your project to ensure the Joomla! framework classes are included.\n\n"
         for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
           markdown_list+="- \`composer require ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\`\n";
           markdown_list+=$(getLinkedClassesMarkdown "${key}");
           markdown_list+="\n";
         done
       else
-        markdown_list+=">We have added the following framework classes to the required list of this Composer package.\n\n"
+        markdown_list+="> We have added the following framework classes to the required list of this Composer package.\n\n"
         for key in $(printf "%s\n" "${!JOOMLA_FRAMEWORK[@]}" | sort); do
           markdown_list+="- ${key//\\//} \"${VDM_PACKAGE_JOOMLA_FRAMEWORK:-~3.0}\"\n";
           markdown_list+=$(getLinkedClassesMarkdown "${key}");
@@ -1226,6 +1292,7 @@ command -v sed >/dev/null 2>&1 || {
       echo -n ""
     else
       local markdown_list="\n## Joomla CMS Dependencies\n\n"
+      markdown_list+="> Here we list the CMS dependencies and provide links to where they are used.\n\n";
       for key in $(printf "%s\n" "${!JOOMLA_NAMESPACES[@]}" | sort); do
         markdown_list+="- ${key}\n";
         markdown_list+=$(getLinkedClassesMarkdown "${key}");
@@ -1274,11 +1341,11 @@ command -v sed >/dev/null 2>&1 || {
         [ -n "${!VDM_PACKAGE_DESCRIPTION}" ] && echo "${!VDM_PACKAGE_DESCRIPTION}" || echo "${VDM_PACKAGE_DESCRIPTION}"
       fi
       echo ""
-      echo "## Details"
+      echo "## Composer Package Details"
       echo ""
       echo "- Packager: [${VDM_PACKAGER}](${VDM_PACKAGER_URL})"
       echo "- Author: [${VDM_AUTHOR:-$PROGRAM_NAME}](${VDM_AUTHOR_URL:-$PROGRAM_URL})"
-      echo "- Creation Date: ${CREATION_DATE}"
+      echo "- Package Build Date: ${VDM_PACKAGE_BUILD_DATE}"
       echo ""
       echo "### Installation via Composer"
       echo ""
@@ -1297,38 +1364,41 @@ command -v sed >/dev/null 2>&1 || {
       echo "\`\`\`"
       echo "composer require ${VDM_NAME:-error}:${VDM_PACKAGE_VERSION:-1.0.0}"
       echo "\`\`\`"
+      getAdditionalReadme
       getJoomlaFramework
       getJoomlaDependencies
       echo ""
       echo "### License"
-      echo "> ${VDM_LICENSE:-none}"
+      echo "> ${VDM_PACKAGE_LICENSE:-none}"
       echo ""
-    } >"${VDM_README_MD}"
+    } >"${VDM_PACKAGE_README_FILE_PATH}"
   }
 
   # set the license file
   function setLicenseFile() {
     local has_error=false
     # check if the license file is passed via a URL
-    if [[ "${VDM_LICENSE_FILE}" =~ ^"http:" ]] || [[ "${VDM_LICENSE_FILE}" =~ ^"https:" ]]; then
-      # shellcheck disable=SC2143
-      if [[ $(wget -S --spider "${VDM_LICENSE_FILE}" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
-        wget --quiet "${VDM_LICENSE_FILE}" -O "${VDM_LICENSE_FILE_PATH}"
-        VDM_LICENSE_FILE="LICENSE"
+    if [ -n "${VDM_PACKAGE_LICENSE_FILE}" ]; then
+      if [[ "${VDM_PACKAGE_LICENSE_FILE}" =~ ^"http:" ]] || [[ "${VDM_PACKAGE_LICENSE_FILE}" =~ ^"https:" ]]; then
+        # shellcheck disable=SC2143
+        if [[ $(wget -S --spider "${VDM_PACKAGE_LICENSE_FILE}" 2>&1 | grep 'HTTP/1.1 200 OK') ]]; then
+          wget --quiet "${VDM_PACKAGE_LICENSE_FILE}" -O "${VDM_PACKAGE_LICENSE_FILE_PATH}"
+        else
+          echo >&2 "[error] The license:${VDM_PACKAGE_LICENSE_FILE} is not a valid URL."
+          has_error=true
+        fi
+      elif [ -f "${VDM_LICENSE_DIR}/${VDM_PACKAGE_LICENSE_FILE}" ]; then
+        # now copy the license file
+        cp "${VDM_LICENSE_DIR}/${VDM_PACKAGE_LICENSE_FILE}" "${VDM_PACKAGE_LICENSE_FILE_PATH}"
       else
-        echo >&2 "[error] The license:${VDM_LICENSE_FILE} is not a valid URL."
+        echo >&2 "[error] The license:${VDM_LICENSE_DIR}/${VDM_PACKAGE_LICENSE_FILE} not found."
         has_error=true
       fi
-    elif [ -f "${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE}" ]; then
-      # now copy the license file
-      cp "${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE}" "${VDM_LICENSE_FILE_PATH}"
-    else
-      echo >&2 "[error] The license:${VDM_LICENSE_DIR}/${VDM_LICENSE_FILE} not found."
-      has_error=true
+      VDM_PACKAGE_LICENSE_FILE=$(basename "${VDM_PACKAGE_LICENSE_FILE_PATH}")
     fi
     # check if we have some errors
     if $has_error; then
-      return 16
+      return 0
     fi
     # little information of progress
     _echo "[info] Setting the License File..."
@@ -1379,6 +1449,13 @@ command -v sed >/dev/null 2>&1 || {
         makeGitCommit "${message}" "${VDM_PACKAGE_VERSION:-1.0.0}" "$VDM_TAG_EXIST" || return 28
         # give little notice of progress
         _echo "[info] Pushing changes to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+        # when a dry run
+        _dry_run "[dry-run] We would have pushed the update to the existing repo on the Gitea system." && {
+          if ! $VDM_TAG_EXIST; then
+            _dry_run "[dry-run] We would have pushed the tags to the existing repo on the Gitea system."
+          fi
+          return 0
+        }
         # make a normal push update
         git push >/dev/null 2>&1 || return 30
         if ! $VDM_TAG_EXIST; then
@@ -1389,6 +1466,9 @@ command -v sed >/dev/null 2>&1 || {
         setGitRepository || return 29
         # give little notice of progress
         _echo "[info] Pushing (TO CREATE) changes to (${VDM_REPOSITORY_OWNER}/${VDM_REPOSITORY_REPO}) repository"
+        # when a dry run
+        _dry_run "[dry-run] We would have pushed the changes to the new repo:${VDM_REPOSITORY_BRANCH} on the Gitea system."
+        _dry_run "[dry-run] We would have pushed the tags to the new repo on the Gitea system." && return 0
         # push to creat the repository (if allowed)
         if [[ "${VDM_REPOSITORY_BRANCH}" == 'default' ]]; then
           git push -u origin master >/dev/null 2>&1 || return 30
@@ -1524,6 +1604,10 @@ command -v sed >/dev/null 2>&1 || {
 
   # set a composer package
   function setComposerPackage() {
+    # when a dry run
+    _dry_run "[dry-run] We would have removed ${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}/.git"
+    _dry_run "[dry-run] Then we would have zipped ${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO} into ${VDM_PACKAGE_ZIP_FILE}"
+    _dry_run "[dry-run] Then we would have pushed the composer package up to the Gitea system." && return 0
     # remove the git directory
     rm -fr "${VDM_PACKAGE_GIT_DIR}/${VDM_REPOSITORY_REPO}/.git" || return 31
     # zip the package
@@ -1568,6 +1652,15 @@ command -v sed >/dev/null 2>&1 || {
     if (("$QUIET" == 0)); then
       echo "$1"
     fi
+  }
+
+  # when this is a dry run
+  function _dry_run() {
+    if (("$VDM_DRY_RUN" == 1)); then
+      _echo "$1"
+      return 0
+    fi
+    return 1
   }
 
   # Zip the content of a path
@@ -1783,15 +1876,18 @@ EOF
   # use UTC+00:00 time also called zulu
   # shellcheck disable=SC2034
   START_DATE=$(TZ=":ZULU" date +"%m/%d/%Y @ %R (UTC)")
-  CREATION_DATE=$(TZ=":ZULU" date +"%B %Y")
+  VDM_PACKAGE_BUILD_DATE=$(TZ=":ZULU" date +"%B %Y")
 
   # the quiet switch
-  QUIET="${QUIET:-0}"
+  : "${QUIET:=0}"
+
+  # the dry run switch
+  : "${VDM_DRY_RUN:=0}"
 
   # we set the packager directories
   tmp_path="/home/$USER/${PROGRAM_CODE}"
   # ALWAYS USE GLOBAL IF SET
-  VDM_MAIN_DIR="${VDM_MAIN_DIR:-$tmp_path}"
+  : "${VDM_MAIN_DIR:="${VDM_MAIN_DIR:-$tmp_path}"}"
 
   # we set the licenses directory
   tmp_path="${VDM_MAIN_DIR}/licenses"
@@ -1799,7 +1895,7 @@ EOF
   # if path not set try $PWD path
   [ -d "$tmp_path" ] || tmp_path="$PWD"
   # ALWAYS USE GLOBAL IF SET
-  VDM_LICENSE_DIR="${VDM_LICENSE_DIR:-$tmp_path}"
+  : "${VDM_LICENSE_DIR:="$tmp_path"}"
 
   # the environment file variables path
   tmp_path="$PWD/.env_${PROGRAM_CODE}"
@@ -1808,7 +1904,7 @@ EOF
   # if file not set try $VDM_MAIN_DIR path
   [ -f "$tmp_path" ] || tmp_path="/home/$USER/.config/${PROGRAM_CODE}/.env"
   # ALWAYS USE GLOBAL IF SET
-  VDM_ENV_FILE_PATH="${VDM_ENV_FILE_PATH:-$tmp_path}"
+  : "${VDM_ENV_FILE_PATH:="$tmp_path"}"
 
   # clear this tmp out
   unset tmp_path
@@ -1822,6 +1918,9 @@ EOF
       ;;
     -q | --quiet)
       QUIET=1
+      ;;
+    -n | --dry-run)
+      VDM_DRY_RUN=1
       ;;
     --uninstall)
       runUninstall
@@ -1849,6 +1948,13 @@ EOF
       VDM_PACKAGE_CONF_FILE=${1#*=}
       if [ -z "$VDM_PACKAGE_CONF_FILE" ]; then
         echo '[error] "--conf" requires a non-empty option argument.'
+        exit 17
+      fi
+      ;;
+    -l=* | --licence=*)
+      VDM_PACKAGE_LICENSE=${1#*=}
+      if [ -z "$VDM_PACKAGE_LICENSE" ]; then
+        echo '[error] "--licence" requires a non-empty option argument.'
         exit 17
       fi
       ;;
@@ -1945,7 +2051,7 @@ EOF
   # if file not set try $VDM_MAIN_DIR path
   [ -f "$tmp_path" ] || tmp_path="$VDM_MAIN_DIR/.${PROGRAM_CODE}"
   # ALWAYS USE GLOBAL IF SET
-  VDM_PACKAGE_CONF_FILE=${VDM_PACKAGE_CONF_FILE:-$tmp_path}
+  : "${VDM_PACKAGE_CONF_FILE:="$tmp_path"}"
 
   # Check if the config file is passed as a URL
   if [[ "$VDM_PACKAGE_CONF_FILE" =~ ^http: ]] || [[ "$VDM_PACKAGE_CONF_FILE" =~ ^https: ]]; then
@@ -1953,10 +2059,8 @@ EOF
     if curl --output /dev/null --silent --head --fail "$VDM_PACKAGE_CONF_FILE"; then
       # Create the directory for the configuration file if it doesn't exist
       mkdir -p "$HOME/.config/$PROGRAM_CODE/projects"
-
       # get a file name
       file_name=$(getUniqueFileName "$VDM_PACKAGE_CONF_FILE")
-
       # Download the configuration file
       curl --silent "$VDM_PACKAGE_CONF_FILE" -o "$HOME/.config/$PROGRAM_CODE/projects/${file_name}_conf.json"
       VDM_PACKAGE_CONF_FILE="$HOME/.config/$PROGRAM_CODE/projects/${file_name}_conf.json"

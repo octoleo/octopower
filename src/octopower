@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="OctoPower"
 PROGRAM_CODE="octopower"
-PROGRAM_VERSION="2.0.1"
+PROGRAM_VERSION="2.0.2"
 PROGRAM_V="2.0"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -710,12 +710,19 @@ command -v sed >/dev/null 2>&1 || {
       setValueFromJson 'VDM_BRANCH' '.branch' "${repository}" || VDM_BRANCH="default"
       setValueFromJson 'VDM_API_NAME' '.api_name' "${repository}" || VDM_API_NAME="VDM_GLOBAL_API"
       setValueFromJson 'VDM_TOKEN_NAME' '.token_name' "${repository}" || VDM_TOKEN_NAME="VDM_GLOBAL_TOKEN"
-      # set the package (api/toke)
-      tmp_api=${!VDM_API_NAME}
-      tmp_token=${!VDM_TOKEN_NAME}
-      # allow direct overriding (api/toke)
-      getConfigValue 'VDM_API' '.repository.api' false || VDM_API="${tmp_api}"
-      getConfigValue 'VDM_TOKEN' '.repository.token' false || VDM_TOKEN="${tmp_token}"
+      # Now check if the repository has its own `.api` and `.token` values
+      # If present, override the global values
+      if setValueFromJson 'VDM_API' '.api' "${repository}"; then
+        setValueFromJson 'VDM_TOKEN' '.token' "${repository}" || VDM_TOKEN=''
+      else
+        # set the package (api/toke)
+        tmp_api=${!VDM_API_NAME}
+        tmp_token=${!VDM_TOKEN_NAME}
+        # allow direct overriding (api)
+        getConfigValue 'VDM_API' '.repository.api' false || VDM_API="${tmp_api}"
+        # allow direct overriding (toke)
+        getConfigValue 'VDM_TOKEN' '.repository.token' false || VDM_TOKEN="${tmp_token}"
+      fi
       # check if we have some errors already
       if $has_error; then
         clearFileEnv

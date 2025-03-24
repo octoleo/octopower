@@ -8,7 +8,7 @@ With this script we can easily package multiple power classes in an automated wa
 ---
 # Install
 ```shell
-$ sudo curl -L "https://git.vdm.dev/api/v1/repos/octoleo/octopower/raw/src/octopower" -o /usr/local/bin/octopower
+$ sudo curl -L "https://raw.githubusercontent.com/octoleo/octopower/refs/heads/master/src/octopower" -o /usr/local/bin/octopower
 $ sudo chmod +x /usr/local/bin/octopower
 ```
 ---

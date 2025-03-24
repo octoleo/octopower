@@ -3,7 +3,7 @@
 # Program name
 PROGRAM_NAME="OctoPower"
 PROGRAM_CODE="octopower"
-PROGRAM_VERSION="2.0.2"
+PROGRAM_VERSION="2.0.3"
 PROGRAM_V="2.0"
 PROGRAM_URL="https://git.vdm.dev/octoleo/${PROGRAM_CODE}"
 
@@ -1785,7 +1785,7 @@ command -v sed >/dev/null 2>&1 || {
       sudo mv "/usr/local/bin/${PROGRAM_CODE}" "/usr/local/bin/${PROGRAM_CODE}.bak"
     fi
     # pull the latest version. Master is always the latest
-    if sudo curl --fail -L "https://git.vdm.dev/api/v1/repos/octoleo/${PROGRAM_CODE}/raw/src/${PROGRAM_CODE}?ref=${branch:-master}" -o "/usr/local/bin/${PROGRAM_CODE}" 2>/dev/null; then
+    if sudo curl --fail -L "https://raw.githubusercontent.com/octoleo/${PROGRAM_CODE}/refs/heads/${branch:-master}/src/${PROGRAM_CODE}" -o "/usr/local/bin/${PROGRAM_CODE}" 2>/dev/null; then
       # give success message
       echo "[success] Update was successful."
       # do we have a backup
